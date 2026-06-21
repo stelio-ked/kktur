@@ -15,6 +15,18 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 const JWT_SECRET = process.env.JWT_SECRET || "meu-secret-super-seguro-dev-only";
 
+const formatDbError = (err: any): string => {
+  if (err && err.message) {
+    let msg = err.message;
+    if (err.cause) {
+      const causeMsg = typeof err.cause === 'object' && (err.cause as any).message ? (err.cause as any).message : String(err.cause);
+      msg += ` | Causa original: ${causeMsg}`;
+    }
+    return msg;
+  }
+  return String(err);
+};
+
 const MAX_GEMINI_CALLS_PER_DAY = 15;
 
 const geminiQuotaMiddleware = async (req: any, res: any, next: any) => {
@@ -243,7 +255,7 @@ async function startServer() {
       const token = jwt.sign({ id: newUser.id, email: newUser.email, name: newUser.name }, JWT_SECRET, { expiresIn: '7d' });
       res.json({ success: true, token, user: { id: newUser.id, email: newUser.email, name: newUser.name } });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: formatDbError(err) });
     }
   });
 
@@ -261,7 +273,7 @@ async function startServer() {
       const token = jwt.sign({ id: user.id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
       res.json({ success: true, token, user: { id: user.id, email: user.email, name: user.name } });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: formatDbError(err) });
     }
   });
 
@@ -978,7 +990,7 @@ async function startServer() {
       res.json({ success: true, itinerary: { id: itinerary.id, title: itinerary.title, data: data || {} } });
     } catch (err: any) {
       console.error(err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: formatDbError(err) });
     }
   });
 
