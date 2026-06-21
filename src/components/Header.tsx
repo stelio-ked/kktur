@@ -17,7 +17,8 @@ import {
   Moon,
   Menu,
   LogOut,
-  Settings
+  Settings,
+  Star
 } from "lucide-react";
 import { Traveler, NotificationAlert } from "../types";
 import { motion, AnimatePresence } from "motion/react";
@@ -45,6 +46,8 @@ interface HeaderProps {
   onCreateItinerary: (title: string) => void;
   onRenameItinerary: (id: string | number, title: string) => void;
   onDeleteItinerary: (id: string | number) => void;
+  favoriteItineraryId?: string | number | null;
+  onSetFavoriteItinerary?: (id: string | number) => void;
   isTravelerMode?: boolean;
   currentUser?: { name?: string; email?: string } | null;
   unreadChatCount?: number;
@@ -73,6 +76,8 @@ export default function Header({
   onCreateItinerary,
   onRenameItinerary,
   onDeleteItinerary,
+  favoriteItineraryId,
+  onSetFavoriteItinerary,
   isTravelerMode = false,
   currentUser,
   unreadChatCount = 0,
@@ -187,12 +192,18 @@ export default function Header({
               <Menu className="w-6 h-6 text-slate-800" />
               <div className="flex flex-col text-left text-xs">
                 <span className="text-lg font-extrabold tracking-tight text-slate-800 hidden sm:inline-block">Minhas Viagens</span>
-                <span className="sm:hidden text-sm font-extrabold tracking-tight text-slate-800 leading-snug">
-                  {itineraries.find(it => it.id === activeItineraryId)?.title || "Viagens"}
+                <span className="sm:hidden text-sm font-extrabold tracking-tight text-slate-800 leading-snug truncate max-w-[150px] flex items-center gap-1">
+                  {itineraries.find(it => String(it.id) === String(activeItineraryId))?.title || "Viagens"}
+                  {String(activeItineraryId) === String(favoriteItineraryId) && (
+                    <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                  )}
                 </span>
-                <span className="text-[10px] text-indigo-600 font-bold hidden sm:flex items-center gap-1 leading-none mt-0.5">
-                  {itineraries.find(it => it.id === activeItineraryId)?.title}
-                  <ChevronDown className="w-3 h-3 transition-transform group-hover:translate-y-0.5" />
+                <span className="text-[10px] text-indigo-600 font-bold hidden sm:flex items-center gap-1 leading-none mt-0.5 truncate max-w-[200px]">
+                  {itineraries.find(it => String(it.id) === String(activeItineraryId))?.title || "Selecione"}
+                  {String(activeItineraryId) === String(favoriteItineraryId) ? (
+                    <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500 shrink-0" />
+                  ) : null}
+                  <ChevronDown className="w-3 h-3 transition-transform group-hover:translate-y-0.5 shrink-0" />
                 </span>
               </div>
             </button>
@@ -204,13 +215,14 @@ export default function Header({
             )}
 
             {/* Dropdown for Voyages/Itineraries */}
+            {showItinerariesDropdown && (
+              <div 
+                className="fixed inset-0 z-30 bg-transparent" 
+                onClick={() => setShowItinerariesDropdown(false)}
+              />
+            )}
             <AnimatePresence>
               {showItinerariesDropdown && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-30 bg-transparent" 
-                    onClick={() => setShowItinerariesDropdown(false)}
-                  />
                   <motion.div
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -264,7 +276,7 @@ export default function Header({
                         </div>
                       ) : (
                         itineraries.map((it) => {
-                          const isSelected = it.id === activeItineraryId;
+                          const isSelected = String(it.id) === String(activeItineraryId);
                           const isEditing = editingItineraryId === it.id;
                           
                           return (
@@ -324,12 +336,15 @@ export default function Header({
                                       {isSelected && (
                                         <span className="w-2 h-2 bg-indigo-600 rounded-full shrink-0" />
                                       )}
-                                      <span className="font-extrabold text-[11px] uppercase tracking-wide">{it.title}</span>
+                                      <span className="font-extrabold text-[11px] uppercase tracking-wide truncate max-w-[150px]">{it.title}</span>
+                                      {String(it.id) === String(favoriteItineraryId) && (
+                                        <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
+                                      )}
                                     </div>
                                   </button>
 
                                   {!isTravelerMode && (
-                                    <div className="flex items-center gap-1 select-none">
+                                    <div className="flex items-center gap-1 select-none shrink-0">
                                       {deletingItineraryId === it.id ? (
                                         <div className="flex items-center gap-1 text-[9px] bg-rose-50 border border-rose-250 px-1.5 py-0.5 rounded-lg shrink-0">
                                           <span className="font-extrabold text-rose-700">Deletar?</span>
@@ -356,31 +371,53 @@ export default function Header({
                                           </button>
                                         </div>
                                       ) : (
-                                        <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity">
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setEditingItineraryId(it.id);
-                                              setEditingItineraryTitle(it.title);
-                                            }}
-                                            className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors cursor-pointer"
-                                            title="Renomear"
-                                          >
-                                            <Pencil className="w-3 h-3" />
-                                          </button>
-                                          
-                                          {itineraries.length > 1 && (
+                                        <div className="flex items-center gap-1">
+                                          {/* Toggle Favorite Star Button */}
+                                          {onSetFavoriteItinerary && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                onSetFavoriteItinerary(String(it.id) === String(favoriteItineraryId) ? null as any : it.id);
+                                              }}
+                                              className={`p-1 rounded-md transition-all cursor-pointer ${
+                                                String(it.id) === String(favoriteItineraryId)
+                                                  ? "text-amber-500 bg-amber-50 hover:bg-amber-100"
+                                                  : "text-slate-300 hover:text-amber-500 hover:bg-amber-50 focus:opacity-100 group-hover/item:opacity-100 sm:opacity-0"
+                                              }`}
+                                              title={String(it.id) === String(favoriteItineraryId) ? "Remover de Favorita" : "Tornar Viagem Favorita"}
+                                            >
+                                              <Star className="w-3.5 h-3.5" fill={String(it.id) === String(favoriteItineraryId) ? "currentColor" : "none"} />
+                                            </button>
+                                          )}
+
+                                          {/* Rename and Delete Actions */}
+                                          <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity">
                                             <button
                                               type="button"
                                               onClick={() => {
-                                                setDeletingItineraryId(it.id);
+                                                setEditingItineraryId(it.id);
+                                                setEditingItineraryTitle(it.title);
                                               }}
-                                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-                                              title="Excluir"
+                                              className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors cursor-pointer"
+                                              title="Renomear"
                                             >
-                                              <Trash2 className="w-3 h-3" />
+                                              <Pencil className="w-3 h-3" />
                                             </button>
-                                          )}
+                                            
+                                            {itineraries.length > 1 ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setDeletingItineraryId(it.id);
+                                                }}
+                                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                                                title="Excluir"
+                                              >
+                                                <Trash2 className="w-3 h-3" />
+                                              </button>
+                                            ) : null}
+                                          </div>
                                         </div>
                                       )}
                                     </div>
@@ -405,7 +442,6 @@ export default function Header({
                       </div>
                     )}
                   </motion.div>
-                </>
               )}
             </AnimatePresence>
           </div>
@@ -438,13 +474,14 @@ export default function Header({
               <Settings className="w-5 h-5" />
             </button>
 
+            {showSettingsDropdown && (
+              <div 
+                className="fixed inset-0 z-40 bg-transparent" 
+                onClick={() => setShowSettingsDropdown(false)}
+              />
+            )}
             <AnimatePresence>
               {showSettingsDropdown && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-40 bg-transparent" 
-                    onClick={() => setShowSettingsDropdown(false)}
-                  />
                   <motion.div
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -491,7 +528,6 @@ export default function Header({
                       </button>
                     </div>
                   </motion.div>
-                </>
               )}
             </AnimatePresence>
           </div>

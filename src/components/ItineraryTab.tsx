@@ -1551,14 +1551,6 @@ export default function ItineraryTab({
             )}
 
             {/* Smart Nearby Places AI Scanner Bento */}
-            {activeDestination && (
-              <NearbyPlacesWidget 
-                itineraryId={typeof itineraryId === "number" ? itineraryId : (typeof itineraryId === "string" && !isNaN(parseInt(itineraryId)) ? parseInt(itineraryId) : 0)}
-                destination={activeDestination}
-                onPlacesLoaded={(placesList) => setNearbyPlaces(placesList)}
-                isReadOnly={isReadOnly}
-              />
-            )}
 
             {/* Interactive Add Activity Form */}
             {showAddActivityForm && activeDay && (

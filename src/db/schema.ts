@@ -18,6 +18,7 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow(),
   passwordResetToken: text("password_reset_token"),
   passwordResetExpires: timestamp("password_reset_expires"),
+  favoriteItineraryId: integer("favorite_itinerary_id"),
 });
 
 // Defining a travel itinerary table

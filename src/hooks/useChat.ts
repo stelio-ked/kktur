@@ -35,34 +35,7 @@ export function useChat(itineraryId: string | number, currentUserName?: string) 
 
           if (Array.isArray(data)) {
             if (data.length > 0) {
-              const oldLastTimestamp = lastTimestampRef.current;
               lastTimestampRef.current = data[data.length - 1].timestamp;
-
-              // Fire push notifications for new messages during active session
-              if (!isInitialLoad && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                data.forEach((msg: any) => {
-                  const senderLower = (msg.senderName || "").trim().toLowerCase();
-                  const currentLower = (currentUserName || "").trim().toLowerCase();
-                  
-                  // Only notify if sent by someone else
-                  if (senderLower !== currentLower) {
-                    const recipientLower = (msg.recipientName || "").trim().toLowerCase();
-                    const isGroup = !msg.recipientName || msg.recipientName === "Todos";
-                    
-                    if (isGroup) {
-                      new Notification(`Mensagem no Grupo (${msg.senderName})`, {
-                        body: msg.content || "Enviou um anexo/áudio.",
-                        tag: msg.id
-                      });
-                    } else if (recipientLower === currentLower) {
-                      new Notification(`Mensagem Privada de ${msg.senderName}`, {
-                        body: msg.content || "Enviou um anexo/áudio.",
-                        tag: msg.id
-                      });
-                    }
-                  }
-                });
-              }
 
               setMessages(prev => {
                 const newIds = new Set(data.map((m: any) => m.id));
@@ -72,34 +45,7 @@ export function useChat(itineraryId: string | number, currentUserName?: string) 
             setTypingUsers([]);
           } else if (data && typeof data === "object") {
             if (data.messages && data.messages.length > 0) {
-              const oldLastTimestamp = lastTimestampRef.current;
               lastTimestampRef.current = data.messages[data.messages.length - 1].timestamp;
-
-              // Fire push notifications for new messages during active session
-              if (!isInitialLoad && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                data.messages.forEach((msg: any) => {
-                  const senderLower = (msg.senderName || "").trim().toLowerCase();
-                  const currentLower = (currentUserName || "").trim().toLowerCase();
-                  
-                  // Only notify if sent by someone else
-                  if (senderLower !== currentLower) {
-                    const recipientLower = (msg.recipientName || "").trim().toLowerCase();
-                    const isGroup = !msg.recipientName || msg.recipientName === "Todos";
-                    
-                    if (isGroup) {
-                      new Notification(`Mensagem no Grupo (${msg.senderName})`, {
-                        body: msg.content || "Enviou um anexo/áudio.",
-                        tag: msg.id
-                      });
-                    } else if (recipientLower === currentLower) {
-                      new Notification(`Mensagem Privada de ${msg.senderName}`, {
-                        body: msg.content || "Enviou um anexo/áudio.",
-                        tag: msg.id
-                      });
-                    }
-                  }
-                });
-              }
 
               setMessages(prev => {
                 const newIds = new Set(data.messages.map((m: any) => m.id));

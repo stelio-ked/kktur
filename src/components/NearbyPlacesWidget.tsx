@@ -14,9 +14,15 @@ import {
   AlertCircle,
   X,
   Stethoscope,
-  Briefcase
+  Briefcase,
+  Key
 } from "lucide-react";
-import { motion } from "motion/react";
+import { 
+  getVisitorApiKey, 
+  setVisitorApiKey, 
+  hasVisitorApiKey, 
+  scanNearbyPlacesClientSide 
+} from "../utils/geminiClient";
 
 interface NearbyPlacesWidgetProps {
   itineraryId: number;
@@ -38,6 +44,11 @@ export function NearbyPlacesWidget({
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<CategoryType>("Food");
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Fallback states
+  const [visitorKey, setVisitorKeyLocal] = useState<string>(getVisitorApiKey());
+  const [showKeyPanel, setShowKeyPanel] = useState<boolean>(false);
+  const [isUsingFallback, setIsUsingFallback] = useState<boolean>(false);
 
   const hotelName = destination.hotelName || "";
   const hotelAddress = destination.hotelAddress || "";
@@ -87,7 +98,10 @@ export function NearbyPlacesWidget({
 
     setLoading(true);
     setError(null);
+    setIsUsingFallback(false);
+    
     try {
+      // 2.a. Tentar via servidor principal primeiramente
       const token = localStorage.getItem("auth_token") || "traveler-session";
       const res = await fetch("/api/gemini/nearby-search", {
         method: "POST",
@@ -106,8 +120,8 @@ export function NearbyPlacesWidget({
       });
 
       if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || "Erro desconhecido ao varrer arredores.");
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Erro de resposta da IA do servidor principal.");
       }
 
       const data = await res.json();
@@ -116,11 +130,85 @@ export function NearbyPlacesWidget({
         onPlacesLoaded(data.places);
         setIsModalOpen(true);
       } else {
-        throw new Error("Formato de resposta inesperado do motor de IA.");
+        throw new Error("Formato de resposta inesperado do motor de IA do servidor.");
       }
     } catch (err: any) {
-      console.error("Scanning failed:", err);
-      setError(err.message || "Erro de conexão ao varrer arredores.");
+      console.warn("Main server scan failed, checking client fallback keys...", err);
+      
+      // 2.b. Se houver chave Gemini pessoal cadastrada no navegador do visitante, realizar scan local gratuito (Fallback)
+      if (hasVisitorApiKey()) {
+        setIsUsingFallback(true);
+        try {
+          setError("Servidor indisponível ou limite excedido. Iniciando varredura com sua Chave Gemini pessoal gratuita (Fallback)...");
+          const clientData = await scanNearbyPlacesClientSide(hotelName, hotelAddress, city);
+          
+          if (clientData && Array.isArray(clientData)) {
+            // Tentar sincronizar e salvar no banco de dados para os outros usuários
+            try {
+              const token = localStorage.getItem("auth_token") || "traveler-session";
+              const saveRes = await fetch("/api/gemini/save-places", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  itineraryId,
+                  destinationId: destination.id,
+                  places: clientData
+                })
+              });
+              
+              if (saveRes.ok) {
+                const saveData = await saveRes.json();
+                if (saveData && Array.isArray(saveData.places)) {
+                  setPlaces(saveData.places);
+                  onPlacesLoaded(saveData.places);
+                  setError(null);
+                  setIsModalOpen(true);
+                  return;
+                }
+              }
+            } catch (saveErr) {
+              console.warn("Falha ao salvar cache no banco, apresentando apenas localmente:", saveErr);
+            }
+
+            // Exibição local caso não consiga sincronizar com o banco de dados
+            const formattedLocal = clientData.map((p: any, index: number) => {
+              const finalMapsLink = p.mapsLink || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.name} ${p.address || ""}`)}`;
+              return {
+                id: `local-${index}`,
+                itineraryId,
+                destinationId: String(destination.id),
+                category: p.category || "pontos_importantes",
+                name: p.name,
+                address: p.address || null,
+                rating: p.rating ? String(p.rating) : null,
+                distance: p.distance || null,
+                latitude: p.latitude ? Number(p.latitude) : null,
+                longitude: p.longitude ? Number(p.longitude) : null,
+                mapsLink: finalMapsLink,
+              } as NearbyPlace;
+            });
+            
+            setPlaces(formattedLocal);
+            onPlacesLoaded(formattedLocal);
+            setError(null);
+            setIsModalOpen(true);
+          } else {
+            throw new Error("Formato de resposta inválido da API local externa.");
+          }
+        } catch (fallbackErr: any) {
+          console.error("Fallback scan also failed:", fallbackErr);
+          setError(`Erro de conexão com o servidor e falha ao usar chave pessoal de contingência: ${fallbackErr.message || "Erro desconhecido"}`);
+        } finally {
+          setIsUsingFallback(false);
+        }
+      } else {
+        // Se não houver chave cadastrada, sugere cadastrar para obter acesso imediato gratuito
+        setError(`Erro: ${err.message || "Servidor do sistema instável ou limite excedido."} Cadastre uma chave de API Gemini pessoal gratuita abaixo para varrer os arredores imediatamente!`);
+        setShowKeyPanel(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -221,6 +309,72 @@ export function NearbyPlacesWidget({
           </button>
         )}
       </div>
+
+      {/* Real-time configuration of visitor private key */}
+      <div className="flex items-center justify-between text-xs px-1 bg-slate-50/50 py-1.5 rounded-xl border border-slate-100">
+        <button
+          onClick={() => setShowKeyPanel(!showKeyPanel)}
+          className="text-[11px] text-slate-600 hover:text-indigo-600 font-bold flex items-center gap-1 cursor-pointer transition-colors w-full justify-start text-left"
+        >
+          <Key className="w-3.5 h-3.5 text-slate-400" />
+          {hasVisitorApiKey() ? (
+            <span className="text-emerald-600 font-extrabold flex items-center gap-1">
+              ✓ Chave Gemini Pessoal Ativa <span className="text-[9px] text-slate-400 font-normal hover:underline ml-1">(Configurar)</span>
+            </span>
+          ) : (
+            <span className="text-slate-500 font-bold">
+              💡 Configurar Chave Gemini Pessoal (Fallback Gratuito)
+            </span>
+          )}
+        </button>
+      </div>
+
+      {showKeyPanel && (
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3 text-xs animate-[fadeIn_0.2s_ease-out_both]">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="font-extrabold text-slate-700">Chave de API Gemini do Visitante</p>
+              <p className="text-[10px] text-slate-400 mt-0.5 leading-normal">
+                Insira sua própria chave para realizar varreduras gratuitamente caso o servidor do sistema esteja congestionado, off-line ou sem cota. Ela fica armazenada de forma segura apenas no seu navegador.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowKeyPanel(false)}
+              className="text-slate-400 hover:text-slate-600 font-bold text-xs shrink-0 cursor-pointer"
+            >
+              Fechar
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              placeholder="Digite sua API Key (Ex: AIzaSy...)"
+              value={visitorKey}
+              onChange={(e) => {
+                const val = e.target.value;
+                setVisitorKeyLocal(val);
+                setVisitorApiKey(val);
+              }}
+              className="flex-1 px-3 py-1.5 bg-white border border-slate-250 rounded-xl font-mono text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+            />
+            {visitorKey && (
+              <button
+                onClick={() => {
+                  setVisitorKeyLocal("");
+                  setVisitorApiKey("");
+                }}
+                className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors shrink-0 cursor-pointer text-xs"
+              >
+                Limpar
+              </button>
+            )}
+          </div>
+          <div className="text-[9px] text-slate-400 flex items-center gap-1">
+            <HelpCircle className="w-3 h-3 shrink-0" />
+            <span>Como obter? Acesse <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">Google AI Studio</a> para gerar uma chave grátis.</span>
+          </div>
+        </div>
+      )}
 
       {/* Error Banner */}
       {error && (
@@ -326,12 +480,10 @@ export function NearbyPlacesWidget({
                   </div>
                 ) : (
                   filteredPlaces.map((place, idx) => (
-                    <motion.div 
+                    <div 
                       key={idx} 
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.05 }}
-                      className="bg-white border border-slate-100 rounded-2xl p-4 shadow-xs hover:shadow-sm transition-all group"
+                      className="bg-white border border-slate-100 rounded-2xl p-4 shadow-xs hover:shadow-sm transition-all group animate-[fadeIn_0.3s_ease-out_both]"
+                      style={{ animationDelay: `${idx * 40}ms` }}
                     >
                       <div className="flex items-start justify-between gap-3 mb-2">
                         <h5 className="font-bold text-slate-800 text-sm">{place.name}</h5>
@@ -381,7 +533,7 @@ export function NearbyPlacesWidget({
                           </a>
                         )}
                       </div>
-                    </motion.div>
+                    </div>
                   ))
                 )}
               </div>

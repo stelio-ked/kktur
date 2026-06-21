@@ -334,6 +334,11 @@ export default function App() {
     return saved ? saved : null;
   });
 
+  const [favoriteItineraryId, setFavoriteItineraryId] = useState<string | number | null>(() => {
+    const saved = localStorage.getItem("meu_agente_favorite_itinerary_id");
+    return saved ? saved : null;
+  });
+
   const lastLoadedItineraryIdRef = useRef<string | number | null>(activeItineraryId);
 
   // Database states with LocalStorage persistence of trip parameters
@@ -515,14 +520,16 @@ export default function App() {
   const notifiedMessageIdsRef = useRef<Set<string>>(new Set());
   const hasNotifiedPrivateMsgRef = useRef<boolean>(false);
 
+  // Reset chat tracking correctly when itinerary changes
   useEffect(() => {
-    if (!activeItineraryId || isOffline) return;
-    if (typeof activeItineraryId === "string" && activeItineraryId.startsWith("local-")) return;
-
-    // Reset last timestamp when itinerary id shifts to avoid cross-trip spillover
     lastCheckedChatTimestampRef.current = null;
     notifiedMessageIdsRef.current.clear();
     hasNotifiedPrivateMsgRef.current = false;
+  }, [activeItineraryId]);
+
+  useEffect(() => {
+    if (!activeItineraryId || isOffline) return;
+    if (typeof activeItineraryId === "string" && activeItineraryId.startsWith("local-")) return;
 
     const checkNewMessages = async () => {
       try {
@@ -612,29 +619,32 @@ export default function App() {
                     notifiedMessageIdsRef.current.add(msg.id);
 
                     // 1. Dispatch standard slide-up OS push notification if supported
-                    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                      try {
-                        new Notification(
-                          isGroup ? `Mensagem no Grupo de ${msg.senderName}` : `Mensagem Privada de ${msg.senderName}`,
-                          { body: msg.content || "Enviou uma mídia no grupo.", tag: msg.id }
-                        );
-                      } catch (e) {
-                        console.warn("Could not dispatch standard browser Notification:", e);
+                    const isHidden = document.hidden;
+                    if (activeTab !== "chat" || isHidden) {
+                      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                        try {
+                          new Notification(
+                            isGroup ? `Mensagem no Grupo de ${msg.senderName}` : `Mensagem Privada de ${msg.senderName}`,
+                            { body: msg.content || "Enviou uma mídia no grupo.", tag: msg.id }
+                          );
+                        } catch (e) {
+                          console.warn("Could not dispatch standard browser Notification:", e);
+                        }
                       }
-                    }
-
-                    // 2. Schedule in-app Toast banner if the user is NOT actively looking at "chat" tab!
-                    if (activeTab !== "chat") {
-                      const newToast = {
-                        id: msg.id || `toast-${Date.now()}-${Math.random()}`,
-                        senderName: msg.senderName,
-                        content: msg.content || "Anexo/Mídia",
-                        isPrivate: !isGroup
-                      };
-                      setChatToasts(prev => [...prev.filter(t => t.id !== newToast.id), newToast]);
-                      setTimeout(() => {
-                        setChatToasts(prev => prev.filter(t => t.id !== newToast.id));
-                      }, 4500);
+                      
+                      // 2. Schedule in-app Toast banner if the user is NOT actively looking at "chat" tab!
+                      if (!isHidden) {
+                        const newToast = {
+                          id: msg.id || `toast-${Date.now()}-${Math.random()}`,
+                          senderName: msg.senderName,
+                          content: msg.content || "Anexo/Mídia",
+                          isPrivate: !isGroup
+                        };
+                        setChatToasts(prev => [...prev.filter(t => t.id !== newToast.id), newToast]);
+                        setTimeout(() => {
+                          setChatToasts(prev => prev.filter(t => t.id !== newToast.id));
+                        }, 4500);
+                      }
                     }
                   }
                 }
@@ -696,7 +706,8 @@ export default function App() {
         if (!response.ok) return;
         const respData = await response.json();
         
-        const dataArray = (isTravelerMode || token === "traveler-session") ? respData.itineraries : respData;
+        const dataArray = Array.isArray(respData) ? respData : (respData.itineraries || []);
+        const userFavoriteItineraryId = respData.favoriteItineraryId;
 
         if (Array.isArray(dataArray)) {
           if (dataArray.length > 0) {
@@ -709,10 +720,19 @@ export default function App() {
             setItineraries(formatted);
 
             // Find which one to make active
-            const savedActiveIdStr = localStorage.getItem("meu_agente_active_itinerary_id");
-            const savedActiveId = savedActiveIdStr ? (isNaN(Number(savedActiveIdStr)) ? savedActiveIdStr : Number(savedActiveIdStr)) : null;
+            let matched = undefined;
+            if (userFavoriteItineraryId) {
+              setFavoriteItineraryId(userFavoriteItineraryId);
+              localStorage.setItem("meu_agente_favorite_itinerary_id", String(userFavoriteItineraryId));
+              matched = formatted.find(it => String(it.id) === String(userFavoriteItineraryId));
+            }
 
-            let matched = formatted.find(it => String(it.id) === String(savedActiveId));
+            if (!matched) {
+              const savedActiveIdStr = localStorage.getItem("meu_agente_active_itinerary_id");
+              const savedActiveId = savedActiveIdStr ? (isNaN(Number(savedActiveIdStr)) ? savedActiveIdStr : Number(savedActiveIdStr)) : null;
+              matched = formatted.find(it => String(it.id) === String(savedActiveId));
+            }
+            
             if (!matched) {
               matched = formatted[0];
             }
@@ -1708,6 +1728,27 @@ export default function App() {
     }
   }
 
+  const handleSetFavoriteItinerary = async (id: string | number | null) => {
+    setFavoriteItineraryId(id);
+    if (id) localStorage.setItem("meu_agente_favorite_itinerary_id", String(id));
+    else localStorage.removeItem("meu_agente_favorite_itinerary_id");
+
+    if (token) {
+      try {
+        await fetch("/api/users/favorite", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ itineraryId: id })
+        });
+      } catch(e) {
+        console.error("Failed to update favorite", e);
+      }
+    }
+  };
+
   const handleSelectItinerary = async (nextId: string | number) => {
     if (nextId === activeItineraryId) return;
 
@@ -2144,6 +2185,8 @@ export default function App() {
         onCreateItinerary={handleCreateItinerary}
         onRenameItinerary={handleRenameItinerary}
         onDeleteItinerary={handleDeleteItinerary}
+        favoriteItineraryId={favoriteItineraryId}
+        onSetFavoriteItinerary={handleSetFavoriteItinerary}
         isTravelerMode={isTravelerMode}
         currentUser={currentUser}
         unreadChatCount={unreadChatCount}
@@ -2166,7 +2209,7 @@ export default function App() {
           <div className="flex flex-col text-left">
             <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">Viagem Selecionada</span>
             <span className="text-sm font-extrabold text-indigo-950 leading-tight mt-0.5">
-              {itineraries.find(it => it.id === activeItineraryId)?.title || "Minha Viagem"}
+              {itineraries.find(it => String(it.id) === String(activeItineraryId))?.title || "Minha Viagem"}
             </span>
           </div>
           {currentUser && (
