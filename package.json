@@ -4,8 +4,8 @@
   "description": "Migration tools from Supabase to Easypanel",
   "main": "inspect.ts",
   "scripts": {
-    "start": "tsx server.ts",
-    "build": "echo 'Nothing to build'"
+    "start": "node dist/server.js",
+    "build": "node build.js"
   },
   "dependencies": {
     "@types/express": "^5.0.6",
@@ -13,5 +13,8 @@
     "express": "^5.2.1",
     "pg": "^8.22.0",
     "tsx": "^4.22.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
   }
 }

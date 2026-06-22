@@ -1,38 +1,39 @@
-# Estágio 1: Construção da aplicação
+# Estágio de Compilação (Builder)
 FROM node:20-alpine AS builder
 
-WORKDIR /app
+WORKDIR /usr/src/app
 
-# Copia arquivos de dependência
+# Copiar arquivos de dependências
 COPY package*.json ./
 
-# Instala todas as dependências (incluindo devDependencies necessárias para compilar)
+# Instalar dependências completas
 RUN npm ci
 
-# Copia o restante do código-fonte
+# Copiar código fonte
 COPY . .
 
-# Compila o Front-end e o Back-end
+# Compilar o aplicativo (isso executa 'node build.js' de forma cross-platform)
 RUN npm run build
 
-# Estágio 2: Ambiente de execução leve
+# Estágio de Execução (Runner)
 FROM node:20-alpine AS runner
 
 WORKDIR /app
 
+# Variável de ambiente de produção
 ENV NODE_ENV=production
 
-# Copia definições de dependências
+# Copiar dependências
 COPY package*.json ./
 
-# Instala apenas as dependências de produção para manter a imagem limpa e rápida
+# Instalar apenas dependências de produção para otimização de espaço
 RUN npm ci --only=production
 
-# Copia os arquivos compilados do estágio anterior
-COPY --from=builder /app/dist ./dist
+# Copiar a pasta compilada gerada no primeiro estágio
+COPY --from=builder /usr/src/app/dist ./dist
 
-# Expõe a porta interna da aplicação (3000)
+# Expõe a porta padrão do Easypanel / AI Studio
 EXPOSE 3000
 
-# Comando para iniciar o servidor Express compilado
-CMD ["npm", "run", "start"]
+# Comando de inicialização do servidor compilado
+CMD ["node", "dist/server.js"]
