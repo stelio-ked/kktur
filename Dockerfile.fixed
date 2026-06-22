@@ -1,0 +1,57 @@
+# Estágio de Compilação (Builder)
+FROM node:20-alpine AS builder
+
+WORKDIR /usr/src/app
+
+# Declarar as variáveis que o Easypanel passa via --build-arg
+ARG DATABASE_URL
+ARG NEW_DATABASE_URL
+ARG JWT_SECRET
+ARG GEMINI_API_KEY
+ARG NODE_ENV
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+
+# Passar para ENV (para o Vite conseguir ler durante o build, se aplicável)
+ENV DATABASE_URL=$DATABASE_URL
+ENV NEW_DATABASE_URL=$NEW_DATABASE_URL
+ENV JWT_SECRET=$JWT_SECRET
+ENV GEMINI_API_KEY=$GEMINI_API_KEY
+ENV NODE_ENV=$NODE_ENV
+
+# Copiar arquivos de dependências
+COPY package*.json ./
+RUN npm ci
+
+# Copiar código fonte
+COPY . .
+
+# Compilar o aplicativo
+RUN npm run build
+
+# Estágio de Execução (Runner)
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+# Redefinir as variáveis no ambiente de produção
+ARG DATABASE_URL
+ARG NEW_DATABASE_URL
+ARG JWT_SECRET
+ARG GEMINI_API_KEY
+ARG NODE_ENV
+
+ENV DATABASE_URL=$DATABASE_URL
+ENV NEW_DATABASE_URL=$NEW_DATABASE_URL
+ENV JWT_SECRET=$JWT_SECRET
+ENV GEMINI_API_KEY=$GEMINI_API_KEY
+ENV NODE_ENV=production
+
+# Arquivos de produção
+COPY package*.json ./
+RUN npm ci --only=production
+COPY --from=builder /usr/src/app/dist ./dist
+
+# Garante que portas do Easypanel sejam expostas
+EXPOSE 3000
+
+CMD ["node", "dist/server.js"]
