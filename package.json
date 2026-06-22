@@ -4,8 +4,7 @@
   "description": "Migration tools from Supabase to Easypanel",
   "main": "inspect.ts",
   "scripts": {
-    "start": "tsx inspect.ts",
-    "build": "echo 'Nothing to build'"
+    "start": "tsx inspect.ts"
   },
   "dependencies": {
     "@types/pg": "^8.20.0",
