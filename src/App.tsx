@@ -207,9 +207,10 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (data.success) {
-          if (!data.hasPassword || data.isFirstAccess) {
-            setShowTravelerPasswordPrompt(true);
-          }
+          // Popup de redefinir senha não é mais forçado para o viajante.
+          // if (!data.hasPassword || data.isFirstAccess) {
+          //   setShowTravelerPasswordPrompt(true);
+          // }
         }
       })
       .catch(err => {
@@ -247,7 +248,7 @@ export default function App() {
     // First time access check
     const promptKey = `traveler_pw_prompt_${email}`;
     if (hasPassword === false || isFirstAccess === true || !localStorage.getItem(promptKey)) {
-      setShowTravelerPasswordPrompt(true);
+      // setShowTravelerPasswordPrompt(true); // Removido para não forçar popup
       localStorage.setItem(promptKey, "true");
     }
     

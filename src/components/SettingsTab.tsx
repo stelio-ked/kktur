@@ -545,8 +545,8 @@ export default function SettingsTab({
               </span>
             </div>
             
-            {/* Show Password Reset block if the user is logged in natively (not a guest traveler session) */}
-            {!isTravelerMode && currentUser?.email && (
+            {/* Show Password Reset block for all logged-in users, including linked travelers */}
+            {currentUser?.email && (
               <SettingsPassword email={currentUser.email} />
             )}
           </div>

@@ -297,14 +297,28 @@ async function startServer() {
 
   app.post("/api/auth/change-my-password", authMiddleware, async (req: any, res) => {
     try {
-      const { currentPassword, newPassword } = req.body;
+      const { email, currentPassword, newPassword } = req.body;
       const userId = req.user.id;
 
       if (!newPassword || newPassword.length < 6) {
         return res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres." });
       }
 
-      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      let user;
+      if (userId === 0 && email) {
+        // Traveler session fallback
+        const [foundUser] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+        if (foundUser) {
+           user = foundUser;
+        } else {
+           // Provide an empty shell so we can create it
+           user = { id: 0, email, passwordHash: null };
+        }
+      } else {
+        const [foundUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+        user = foundUser;
+      }
+      
       if (!user) {
         return res.status(404).json({ error: "Usuário não encontrado." });
       }
@@ -323,7 +337,12 @@ async function startServer() {
       const saltRounds = 10;
       const hash = await bcrypt.hash(newPassword, saltRounds);
 
-      await db.update(users).set({ passwordHash: hash }).where(eq(users.id, userId));
+      if (user.id === 0) {
+         // Create the user since they didn't exist in the users table yet
+         await db.insert(users).values({ email: user.email, name: "Viajante", passwordHash: hash });
+      } else {
+         await db.update(users).set({ passwordHash: hash }).where(eq(users.id, user.id));
+      }
 
       res.json({ success: true, message: "Senha alterada com sucesso." });
     } catch (err: any) {
