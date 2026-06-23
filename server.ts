@@ -682,19 +682,23 @@ async function startServer() {
       });
 
       // Log success access only for the primary itinerary (single access) to prevent duplication across multiple registered trips
-      if (dbItineraries.length > 0) {
-        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-        const clientIp = typeof ip === 'string' ? ip : ip[0];
-        const firstItinerary = dbItineraries[0];
-        
-        if (await shouldLogAccess(db, req.user.email, firstItinerary.id, accessLogs)) {
-          await db.insert(accessLogs).values({
-            itineraryId: firstItinerary.id,
-            userEmail: req.user.email,
-            status: "success",
-            ipAddress: clientIp
-          });
+      try {
+        if (dbItineraries.length > 0) {
+          const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+          const clientIp = typeof ip === 'string' ? ip : ip[0];
+          const firstItinerary = dbItineraries[0];
+          
+          if (await shouldLogAccess(db, req.user.email, firstItinerary.id, accessLogs)) {
+            await db.insert(accessLogs).values({
+              itineraryId: firstItinerary.id,
+              userEmail: req.user.email,
+              status: "success",
+              ipAddress: clientIp
+            });
+          }
         }
+      } catch (err) {
+        console.error("Erro ao registrar log de acesso para o itinerário:", err);
       }
 
       
@@ -1300,7 +1304,12 @@ async function startServer() {
       if (!existing) return res.status(404).json({ error: "Itinerário não encontrado" });
       if (existing.ownerId !== req.user.id) return res.status(403).json({ error: "Não autorizado" }); // only owner can see logs
 
-      const logs = await db.select().from(accessLogs).where(eq(accessLogs.itineraryId, itineraryId)).orderBy(sql`${accessLogs.attemptedAt} DESC`);
+      let logs = [];
+      try {
+        logs = await db.select().from(accessLogs).where(eq(accessLogs.itineraryId, itineraryId)).orderBy(sql`${accessLogs.attemptedAt} DESC`);
+      } catch (err) {
+        console.error("Erro ao carregar logs de acesso:", err);
+      }
       res.json({ success: true, logs });
     } catch (error: any) {
       console.error("Access logs fetch error:", error);
@@ -2422,25 +2431,33 @@ Não adicione qualquer texto introdutório ou explicativo. Responda apenas com a
       const registeredUser = await db.select().from(users).where(eq(sql`LOWER(TRIM(${users.email}))`, cleanEmail)).limit(1);
       const hasPassword = registeredUser.length > 0 && !!registeredUser[0].passwordHash;
 
-      // Check accessLogs for travelers first access log check
-      const userLogs = await db.select()
-        .from(accessLogs)
-        .where(eq(sql`LOWER(TRIM(${accessLogs.userEmail}))`, cleanEmail));
+      // Check accessLogs for travelers first access log check with safety fallback
+      let isFirstAccessInDb = true;
+      try {
+        const userLogs = await db.select()
+          .from(accessLogs)
+          .where(eq(sql`LOWER(TRIM(${accessLogs.userEmail}))`, cleanEmail));
+        isFirstAccessInDb = userLogs.length === 0;
+      } catch (err) {
+        console.error("Erro ao carregar logs de acesso do viajante:", err);
+      }
 
-      const isFirstAccessInDb = userLogs.length === 0;
-
-      // Log successful access log in the database
+      // Log successful access log in the database securely wrapped in try/catch
       const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
       const clientIp = typeof ip === 'string' ? ip : ip[0];
       const firstItineraryId = itineraryIds.length > 0 ? itineraryIds[0] : null;
 
-      if (await shouldLogAccess(db, cleanEmail, firstItineraryId, accessLogs)) {
-        await db.insert(accessLogs).values({
-          itineraryId: firstItineraryId,
-          userEmail: cleanEmail,
-          status: "success",
-          ipAddress: clientIp
-        });
+      try {
+        if (await shouldLogAccess(db, cleanEmail, firstItineraryId, accessLogs)) {
+          await db.insert(accessLogs).values({
+            itineraryId: firstItineraryId,
+            userEmail: cleanEmail,
+            status: "success",
+            ipAddress: clientIp
+          });
+        }
+      } catch (err) {
+        console.error("Erro ao registrar log de acesso para o viajante vinculado:", err);
       }
 
       // Fetch itineraries details
