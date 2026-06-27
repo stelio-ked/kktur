@@ -1055,6 +1055,29 @@ async function startServer() {
         await tx.update(itineraries).set(updateData).where(eq(itineraries.id, itineraryId));
 
       if (data) {
+        // Load existing records to preserve real files/attachments if they are optimized/hidden on the client side
+        let existingFlights: any[] = [];
+        let existingDocuments: any[] = [];
+        let existingCosts: any[] = [];
+        let existingActivities: any[] = [];
+
+        try {
+          existingFlights = await tx.select().from(flights).where(eq(flights.itineraryId, itineraryId));
+          existingDocuments = await tx.select().from(documents).where(eq(documents.itineraryId, itineraryId));
+          existingCosts = await tx.select().from(costs).where(eq(costs.itineraryId, itineraryId));
+          const existingDestinations = await tx.select().from(destinations).where(eq(destinations.itineraryId, itineraryId));
+          const existingDestIds = existingDestinations.map((d: any) => d.id);
+          if (existingDestIds.length > 0) {
+            const existingDays = await tx.select().from(itineraryDays).where(inArray(itineraryDays.destinationId, existingDestIds));
+            const existingDayIds = existingDays.map((dy: any) => dy.id);
+            if (existingDayIds.length > 0) {
+              existingActivities = await tx.select().from(activities).where(inArray(activities.dayId, existingDayIds));
+            }
+          }
+        } catch (fetchErr) {
+          console.error("Erro ao recuperar registros existentes para preservar arquivos:", fetchErr);
+        }
+
         await tx.delete(travelers).where(eq(travelers.itineraryId, itineraryId));
         await tx.delete(destinations).where(eq(destinations.itineraryId, itineraryId));
         await tx.delete(costs).where(eq(costs.itineraryId, itineraryId));
@@ -1092,35 +1115,56 @@ async function startServer() {
         }
 
         if (data.destinations && data.destinations.length > 0) {
-          const dbDestinationsValues = data.destinations.map((d: any) => ({
-            id: d.id || 'd-' + Math.random().toString(36).substring(7),
-            itineraryId,
-            city: d.city || '',
-            state: d.state || '',
-            country: d.country || '',
-            dates: d.dates || '',
-            startDate: d.startDate || d.dates?.split(" - ")[0] || '',
-            endDate: d.endDate || d.dates?.split(" - ")[1] || '',
-            hotelName: d.hotelName || '',
-            hotelLink: d.hotelLink || '',
-            hotelAddress: d.hotelAddress || '',
-            hotelCoordsLat: d.hotelCoords?.lat ?? null,
-            hotelCoordsLng: d.hotelCoords?.lng ?? null,
-            checkInTime: d.checkInTime || '',
-            checkOutTime: d.checkOutTime || '',
-            checkInDate: d.checkInDate || '',
-            notes: d.notes || '',
-            createdByEmail: d.createdByEmail || null
-          }));
+          const seenDestIds = new Set<string>();
+          const destIdMap = new Map<string, string>();
+          const dbDestinationsValues = data.destinations.map((d: any) => {
+            const rawId = d.id || 'd-' + Math.random().toString(36).substring(7);
+            let destId = rawId;
+            if (seenDestIds.has(destId)) {
+              destId = 'd-' + Math.random().toString(36).substring(7);
+            }
+            seenDestIds.add(destId);
+            if (d.id) {
+              destIdMap.set(d.id, destId);
+            }
+            return {
+              id: destId,
+              itineraryId,
+              city: d.city || '',
+              state: d.state || '',
+              country: d.country || '',
+              dates: d.dates || '',
+              startDate: d.startDate || d.dates?.split(" - ")[0] || '',
+              endDate: d.endDate || d.dates?.split(" - ")[1] || '',
+              hotelName: d.hotelName || '',
+              hotelLink: d.hotelLink || '',
+              hotelAddress: d.hotelAddress || '',
+              hotelCoordsLat: d.hotelCoords?.lat ?? null,
+              hotelCoordsLng: d.hotelCoords?.lng ?? null,
+              checkInTime: d.checkInTime || '',
+              checkOutTime: d.checkOutTime || '',
+              checkInDate: d.checkInDate || '',
+              notes: d.notes || '',
+              createdByEmail: d.createdByEmail || null
+            };
+          });
           await tx.insert(destinations).values(dbDestinationsValues);
 
           const daysToInsert: any[] = [];
           const activitiesToInsert: any[] = [];
+          const seenDayIds = new Set<string>();
+          const seenActIds = new Set<string>();
 
           data.destinations.forEach((d: any, dIdx: number) => {
             if (d.days && d.days.length > 0) {
               d.days.forEach((day: any) => {
-                const dayDbId = day.id || 'day-' + Math.random().toString(36).substring(7);
+                const rawDayId = day.id || 'day-' + Math.random().toString(36).substring(7);
+                let dayDbId = rawDayId;
+                if (seenDayIds.has(dayDbId)) {
+                  dayDbId = 'day-' + Math.random().toString(36).substring(7);
+                }
+                seenDayIds.add(dayDbId);
+
                 daysToInsert.push({
                    id: dayDbId,
                    destinationId: dbDestinationsValues[dIdx].id,
@@ -1131,8 +1175,22 @@ async function startServer() {
 
                 if (day.activities && day.activities.length > 0) {
                   day.activities.forEach((act: any) => {
+                    let fileData = act.ticketFileData || '';
+                    if (fileData === "(large_preview_hidden_in_local_storage)") {
+                      const found = existingActivities.find((ea: any) => ea.id === act.id);
+                      if (found && found.ticketFileData && found.ticketFileData !== "(large_preview_hidden_in_local_storage)") {
+                        fileData = found.ticketFileData;
+                      }
+                    }
+                    const rawActId = act.id || 'act-' + Math.random().toString(36).substring(7);
+                    let actDbId = rawActId;
+                    if (seenActIds.has(actDbId)) {
+                      actDbId = 'act-' + Math.random().toString(36).substring(7);
+                    }
+                    seenActIds.add(actDbId);
+
                     activitiesToInsert.push({
-                      id: act.id || 'act-' + Math.random().toString(36).substring(7),
+                      id: actDbId,
                       dayId: dayDbId,
                       time: act.time || '',
                       location: act.location || '',
@@ -1143,7 +1201,7 @@ async function startServer() {
                       parking: act.parking || '',
                       notes: act.notes || '',
                       ticketFileName: act.ticketFileName || '',
-                      ticketFileData: act.ticketFileData || '',
+                      ticketFileData: fileData,
                       date: act.date || '',
                       createdByEmail: act.createdByEmail || null
                     });
@@ -1164,67 +1222,94 @@ async function startServer() {
         }
 
         if (data.costs && data.costs.length > 0) {
-          await tx.insert(costs).values(data.costs.map((c: any) => ({
-            id: c.id || 'c-' + Math.random().toString(36).substring(7),
-            itineraryId,
-            category: c.category || '',
-            description: c.description || '',
-            notes: c.notes || '',
-            link: c.link || '',
-            totalCostBRL: Number(c.totalCostBRL) || 0,
-            status: c.status || '',
-            dateRange: c.dateRange || '',
-            destinationId: c.destinationId || '',
-            isPersonal: c.isPersonal ?? false,
-            createdByEmail: c.createdByEmail || null,
-            receiptName: c.receiptName || null,
-            receiptData: c.receiptData || null
-          })));
+          await tx.insert(costs).values(data.costs.map((c: any) => {
+            let receiptData = c.receiptData || null;
+            if (receiptData === "(large_preview_hidden_in_local_storage)") {
+              const found = existingCosts.find((ec: any) => ec.id === c.id);
+              if (found && found.receiptData && found.receiptData !== "(large_preview_hidden_in_local_storage)") {
+                receiptData = found.receiptData;
+              }
+            }
+            return {
+              id: c.id || 'c-' + Math.random().toString(36).substring(7),
+              itineraryId,
+              category: c.category || '',
+              description: c.description || '',
+              notes: c.notes || '',
+              link: c.link || '',
+              totalCostBRL: Number(c.totalCostBRL) || 0,
+              status: c.status || '',
+              dateRange: c.dateRange || '',
+              destinationId: c.destinationId || '',
+              isPersonal: c.isPersonal ?? false,
+              createdByEmail: c.createdByEmail || null,
+              receiptName: c.receiptName || null,
+              receiptData: receiptData
+            };
+          }));
         }
 
         if (data.documents && data.documents.length > 0) {
-          await tx.insert(documents).values(data.documents.map((doc: any) => ({
-            id: doc.id || 'doc-' + Math.random().toString(36).substring(7),
-            itineraryId,
-            type: doc.type || 'other',
-            title: doc.title || '',
-            airline: doc.airline || '',
-            flightNumber: doc.flightNumber || '',
-            passengerName: doc.passengerName || '',
-            fileData: doc.fileData || '',
-            fileName: doc.fileName || '',
-            notes: doc.notes || '',
-            uploadedAt: doc.uploadedAt || new Date().toISOString(),
-            createdByEmail: doc.createdByEmail || null
-          })));
+          await tx.insert(documents).values(data.documents.map((doc: any) => {
+            let fileData = doc.fileData || '';
+            if (fileData === "(large_preview_hidden_in_local_storage)") {
+              const found = existingDocuments.find((ed: any) => ed.id === doc.id);
+              if (found && found.fileData && found.fileData !== "(large_preview_hidden_in_local_storage)") {
+                fileData = found.fileData;
+              }
+            }
+            return {
+              id: doc.id || 'doc-' + Math.random().toString(36).substring(7),
+              itineraryId,
+              type: doc.type || 'other',
+              title: doc.title || '',
+              airline: doc.airline || '',
+              flightNumber: doc.flightNumber || '',
+              passengerName: doc.passengerName || '',
+              fileData: fileData,
+              fileName: doc.fileName || '',
+              notes: doc.notes || '',
+              uploadedAt: doc.uploadedAt || new Date().toISOString(),
+              createdByEmail: doc.createdByEmail || null
+            };
+          }));
         }
 
         if (data.flights && data.flights.length > 0) {
-          const flightsToInsert = data.flights.map((f: any) => ({
-            id: f.id || 'f-' + Math.random().toString(36).substring(7),
-            itineraryId,
-            airline: f.airline || '',
-            logoUrl: f.logoUrl || '',
-            flightCode: f.flightCode || '',
-            departureCity: f.departureCity || '',
-            departureCode: f.departureCode || '',
-            departureTime: f.departureTime || '',
-            arrivalCity: f.arrivalCity || '',
-            arrivalCode: f.arrivalCode || '',
-            arrivalTime: f.arrivalTime || '',
-            duration: f.duration || '',
-            dateStr: f.dateStr || '',
-            arrivalDateStr: f.arrivalDateStr || '',
-            status: f.status || 'Confirmado',
-            isDeleted: f.isDeleted || false,
-            gate: f.gate || '',
-            locator: f.locator || '',
-            passengers: f.passengers || '',
-            seats: f.seats || '',
-            ticketFileName: f.ticketFileName || '',
-            ticketFileData: f.ticketFileData || '',
-            createdByEmail: f.createdByEmail || null
-          }));
+          const flightsToInsert = data.flights.map((f: any) => {
+            let fileData = f.ticketFileData || '';
+            if (fileData === "(large_preview_hidden_in_local_storage)") {
+              const found = existingFlights.find((ef: any) => ef.id === f.id);
+              if (found && found.ticketFileData && found.ticketFileData !== "(large_preview_hidden_in_local_storage)") {
+                fileData = found.ticketFileData;
+              }
+            }
+            return {
+              id: f.id || 'f-' + Math.random().toString(36).substring(7),
+              itineraryId,
+              airline: f.airline || '',
+              logoUrl: f.logoUrl || '',
+              flightCode: f.flightCode || '',
+              departureCity: f.departureCity || '',
+              departureCode: f.departureCode || '',
+              departureTime: f.departureTime || '',
+              arrivalCity: f.arrivalCity || '',
+              arrivalCode: f.arrivalCode || '',
+              arrivalTime: f.arrivalTime || '',
+              duration: f.duration || '',
+              dateStr: f.dateStr || '',
+              arrivalDateStr: f.arrivalDateStr || '',
+              status: f.status || 'Confirmado',
+              isDeleted: f.isDeleted || false,
+              gate: f.gate || '',
+              locator: f.locator || '',
+              passengers: f.passengers || '',
+              seats: f.seats || '',
+              ticketFileName: f.ticketFileName || '',
+              ticketFileData: fileData,
+              createdByEmail: f.createdByEmail || null
+            };
+          });
 
           await tx.insert(flights).values(flightsToInsert);
 

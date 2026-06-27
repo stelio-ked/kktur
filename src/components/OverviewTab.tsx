@@ -1686,7 +1686,7 @@ export default function OverviewTab({
               <div className="flex-1 overflow-y-auto min-h-[250px] max-h-[50vh] flex flex-col items-center justify-center bg-slate-50 border border-slate-200/60 rounded-2xl p-4 relative group">
                 {viewingBoardingPassFlight.ticketFileData ? (
                   viewingBoardingPassFlight.ticketFileData === "(large_preview_hidden_in_local_storage)" ? (
-                    <div className="flex flex-col items-center justify-center text-center p-6 space-y-3">
+                    <div className="flex flex-col items-center justify-center text-center p-6 space-y-3 animate-fadeIn">
                       <Ticket className="w-12 h-12 text-indigo-500 animate-pulse mb-1" />
                       <p className="font-extrabold text-slate-800 text-sm uppercase tracking-wider">Visualização Otimizada</p>
                       <p className="text-slate-500 text-xs max-w-sm leading-relaxed">
@@ -1697,7 +1697,7 @@ export default function OverviewTab({
                       </span>
                     </div>
                   ) : viewingBoardingPassFlight.ticketFileData.startsWith("data:application/pdf") ? (
-                    <div className="w-full h-full flex flex-col items-center justify-center space-y-4">
+                    <div className="w-full h-full flex flex-col items-center justify-center space-y-4 animate-fadeIn">
                       <iframe 
                         src={viewingBoardingPassFlight.ticketFileData} 
                         className="w-full h-[400px] rounded-xl border border-slate-200 shadow-sm"
@@ -1710,17 +1710,55 @@ export default function OverviewTab({
                       src={viewingBoardingPassFlight.ticketFileData}
                       referrerPolicy="no-referrer"
                       alt="Cartão de Embarque"
-                      className="max-w-full max-h-[420px] object-contain rounded-xl shadow-xs"
+                      className="max-w-full max-h-[420px] object-contain rounded-xl shadow-xs animate-fadeIn"
                     />
                   )
                 ) : (
-                  <div className="flex flex-col items-center justify-center text-center p-6">
+                  <div className="flex flex-col items-center justify-center text-center p-6 animate-fadeIn">
                     <Ticket className="w-12 h-12 text-slate-350 stroke-1 mb-2" />
                     <p className="text-slate-600 font-bold text-sm">Arquivo ausente ou inválido</p>
                     <p className="text-slate-400 text-xs mt-1">Insira novamente o anexo editando o trecho do voo.</p>
                   </div>
                 )}
               </div>
+
+              {!isReadOnly && (
+                <div className="w-full p-3 bg-indigo-50/50 border border-indigo-100/80 rounded-2xl flex items-center justify-between gap-3 shrink-0 animate-fadeIn">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-100/65 flex items-center justify-center text-indigo-600 shrink-0">
+                      <UploadCloud className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-extrabold text-indigo-950 uppercase tracking-wide">Substituir / Enviar Cartão</p>
+                      <p className="text-[9px] text-slate-450 font-medium">Envie um novo PDF ou imagem de cartão de embarque</p>
+                    </div>
+                  </div>
+                  <label className="relative cursor-pointer px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-[10px] uppercase tracking-wider transition-colors shadow-sm shadow-indigo-100 cursor-pointer">
+                    <span>Selecionar</span>
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            const updatedFlight = {
+                              ...viewingBoardingPassFlight,
+                              ticketFileName: file.name,
+                              ticketFileData: reader.result as string
+                            };
+                            onUpdateFlight(updatedFlight);
+                            setViewingBoardingPassFlight(updatedFlight);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
 
               <div className="flex justify-between items-center pt-3.5 border-t border-slate-100 shrink-0">
                 {viewingBoardingPassFlight.ticketFileData && viewingBoardingPassFlight.ticketFileData !== "(large_preview_hidden_in_local_storage)" ? (
