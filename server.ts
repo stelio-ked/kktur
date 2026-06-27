@@ -30,6 +30,376 @@ const formatDbError = (err: any): string => {
   return String(err);
 };
 
+function mapItineraryFromDb(itinerary: any): any {
+  const prefix = `${itinerary.id}_`;
+  const strip = (id: string | undefined | null) => {
+    if (!id) return '';
+    return id.startsWith(prefix) ? id.slice(prefix.length) : id;
+  };
+
+  return {
+    id: itinerary.id,
+    ownerId: itinerary.ownerId,
+    title: itinerary.title,
+    ecoMode: itinerary.ecoMode || false,
+    data: {
+      travelers: (itinerary.travelers || []).map((t: any) => ({
+        ...t,
+        id: strip(t.id)
+      })),
+      destinations: (itinerary.destinations || []).map((d: any) => ({
+        id: strip(d.id),
+        city: d.city,
+        state: d.state,
+        country: d.country,
+        dates: d.dates,
+        startDate: d.startDate,
+        endDate: d.endDate,
+        hotelName: d.hotelName,
+        hotelLink: d.hotelLink,
+        hotelAddress: d.hotelAddress,
+        hotelCoords: (d.hotelCoordsLat && d.hotelCoordsLng) ? { lat: d.hotelCoordsLat, lng: d.hotelCoordsLng } : undefined,
+        checkInTime: d.checkInTime,
+        checkOutTime: d.checkOutTime,
+        checkInDate: d.checkInDate,
+        notes: d.notes,
+        days: (d.days || []).map((day: any) => ({
+          id: strip(day.id),
+          dayNumber: day.dayNumber,
+          dateStr: day.dateStr,
+          title: day.title,
+          activities: (day.activities || []).map((act: any) => ({
+            ...act,
+            id: strip(act.id),
+            dayId: strip(act.dayId)
+          }))
+        })).sort((a: any, b: any) => a.dayNumber - b.dayNumber)
+      })),
+      costs: (itinerary.costs || []).map((c: any) => ({
+        ...c,
+        id: strip(c.id),
+        destinationId: c.destinationId ? strip(c.destinationId) : null
+      })),
+      costCategories: (itinerary.costCategories || []).map((cc: any) => ({
+        ...cc,
+        id: strip(cc.id)
+      })),
+      documents: (itinerary.documents || []).map((doc: any) => ({
+        ...doc,
+        id: strip(doc.id)
+      })),
+      flights: (itinerary.flights || []).map((f: any) => ({
+        ...f,
+        id: strip(f.id),
+        passengersList: ((f as any).passengersList || []).map((p: any) => ({
+          ...p,
+          id: strip(p.id),
+          flightId: strip(p.flightId)
+        }))
+      })),
+      generalTips: (itinerary.generalTips || []).map((tip: any) => ({
+        ...tip,
+        id: strip(tip.id)
+      })),
+      notifications: (itinerary.notifications || []).map((n: any) => ({
+        ...n,
+        id: strip(n.id)
+      })),
+      transactionLogs: (itinerary.transactionLogs || []).map((log: any) => ({
+        ...log,
+        id: strip(log.id)
+      }))
+    }
+  };
+}
+
+async function saveItineraryData(
+  tx: any,
+  itineraryId: number,
+  data: any,
+  options: {
+    existingFlights?: any[];
+    existingDocuments?: any[];
+    existingCosts?: any[];
+    existingActivities?: any[];
+  } = {}
+) {
+  const {
+    existingFlights = [],
+    existingDocuments = [],
+    existingCosts = [],
+    existingActivities = []
+  } = options;
+
+  const prefix = `${itineraryId}_`;
+  const p = (id: string | number | undefined | null, prefixType: string) => {
+    if (!id) return `${prefix}${prefixType}-${Math.random().toString(36).substring(7)}`;
+    const strId = String(id);
+    if (strId.startsWith(prefix)) return strId;
+    return `${prefix}${strId}`;
+  };
+
+  // 1. Travelers
+  if (data.travelers && data.travelers.length > 0) {
+    await tx.insert(travelers).values(data.travelers.map((t: any) => ({
+      id: p(t.id, 't'),
+      itineraryId,
+      name: t.name || '',
+      role: t.role || '',
+      email: t.email || '',
+      checkedActivities: t.checkedActivities || '',
+      packingItems: t.packingItems || '',
+      createdByEmail: t.createdByEmail || null
+    })));
+  }
+
+  // 2. Cost Categories
+  if (data.costCategories && data.costCategories.length > 0) {
+    await tx.insert(costCategories).values(data.costCategories.map((c: any) => ({
+      id: p(c.id, 'cc'),
+      itineraryId,
+      label: c.label || '',
+      color: c.color || '#94A3B8'
+    })));
+  }
+
+  // 3. Destinations, Days, and Activities
+  if (data.destinations && data.destinations.length > 0) {
+    const dbDestinationsValues = data.destinations.map((d: any) => ({
+      id: p(d.id, 'd'),
+      itineraryId,
+      city: d.city || '',
+      state: d.state || '',
+      country: d.country || '',
+      dates: d.dates || '',
+      startDate: d.startDate || d.dates?.split(" - ")[0] || '',
+      endDate: d.endDate || d.dates?.split(" - ")[1] || '',
+      hotelName: d.hotelName || '',
+      hotelLink: d.hotelLink || '',
+      hotelAddress: d.hotelAddress || '',
+      hotelCoordsLat: d.hotelCoords?.lat ?? null,
+      hotelCoordsLng: d.hotelCoords?.lng ?? null,
+      checkInTime: d.checkInTime || '',
+      checkOutTime: d.checkOutTime || '',
+      checkInDate: d.checkInDate || '',
+      notes: d.notes || '',
+      createdByEmail: d.createdByEmail || null
+    }));
+    await tx.insert(destinations).values(dbDestinationsValues);
+
+    const daysToInsert: any[] = [];
+    const activitiesToInsert: any[] = [];
+
+    data.destinations.forEach((d: any, dIdx: number) => {
+      if (d.days && d.days.length > 0) {
+        d.days.forEach((day: any) => {
+          const dayDbId = p(day.id, 'day');
+          daysToInsert.push({
+            id: dayDbId,
+            destinationId: dbDestinationsValues[dIdx].id,
+            dayNumber: day.dayNumber || 0,
+            dateStr: day.dateStr || '',
+            title: day.title || ''
+          });
+
+          if (day.activities && day.activities.length > 0) {
+            day.activities.forEach((act: any) => {
+              let fileData = act.ticketFileData || '';
+              if (fileData === "(large_preview_hidden_in_local_storage)") {
+                const found = existingActivities.find((ea: any) => p(ea.id, 'act') === p(act.id, 'act'));
+                if (found && found.ticketFileData && found.ticketFileData !== "(large_preview_hidden_in_local_storage)") {
+                  fileData = found.ticketFileData;
+                }
+              }
+              activitiesToInsert.push({
+                id: p(act.id, 'act'),
+                dayId: dayDbId,
+                time: act.time || '',
+                location: act.location || '',
+                duration: act.duration || '',
+                cost: act.cost || '',
+                mapsQuery: act.mapsQuery || '',
+                websiteLink: act.websiteLink || '',
+                parking: act.parking || '',
+                notes: act.notes || '',
+                ticketFileName: act.ticketFileName || '',
+                ticketFileData: fileData,
+                date: act.date || '',
+                createdByEmail: act.createdByEmail || null
+              });
+            });
+          }
+        });
+      }
+    });
+
+    if (daysToInsert.length > 0) {
+      await tx.insert(itineraryDays).values(daysToInsert);
+    }
+    if (activitiesToInsert.length > 0) {
+      const chunkSize = 20;
+      for (let i = 0; i < activitiesToInsert.length; i += chunkSize) {
+        const chunk = activitiesToInsert.slice(i, i + chunkSize);
+        await tx.insert(activities).values(chunk);
+      }
+    }
+  }
+
+  // 4. Costs
+  if (data.costs && data.costs.length > 0) {
+    await tx.insert(costs).values(data.costs.map((c: any) => {
+      let receiptData = c.receiptData || null;
+      if (receiptData === "(large_preview_hidden_in_local_storage)") {
+        const found = existingCosts.find((ec: any) => p(ec.id, 'c') === p(c.id, 'c'));
+        if (found && found.receiptData && found.receiptData !== "(large_preview_hidden_in_local_storage)") {
+          receiptData = found.receiptData;
+        }
+      }
+      return {
+        id: p(c.id, 'c'),
+        itineraryId,
+        category: c.category || '',
+        description: c.description || '',
+        notes: c.notes || '',
+        link: c.link || '',
+        totalCostBRL: Number(c.totalCostBRL) || 0,
+        status: c.status || '',
+        dateRange: c.dateRange || '',
+        destinationId: c.destinationId ? p(c.destinationId, 'd') : '',
+        isPersonal: c.isPersonal ?? false,
+        createdByEmail: c.createdByEmail || null,
+        receiptName: c.receiptName || null,
+        receiptData
+      };
+    }));
+  }
+
+  // 5. Documents
+  if (data.documents && data.documents.length > 0) {
+    await tx.insert(documents).values(data.documents.map((doc: any) => {
+      let fileData = doc.fileData || '';
+      if (fileData === "(large_preview_hidden_in_local_storage)") {
+        const found = existingDocuments.find((ed: any) => p(ed.id, 'doc') === p(doc.id, 'doc'));
+        if (found && found.fileData && found.fileData !== "(large_preview_hidden_in_local_storage)") {
+          fileData = found.fileData;
+        }
+      }
+      return {
+        id: p(doc.id, 'doc'),
+        itineraryId,
+        type: doc.type || 'other',
+        title: doc.title || '',
+        airline: doc.airline || '',
+        flightNumber: doc.flightNumber || '',
+        passengerName: doc.passengerName || '',
+        fileData,
+        fileName: doc.fileName || '',
+        notes: doc.notes || '',
+        uploadedAt: doc.uploadedAt || new Date().toISOString(),
+        createdByEmail: doc.createdByEmail || null
+      };
+    }));
+  }
+
+  // 6. Flights & Passengers
+  if (data.flights && data.flights.length > 0) {
+    const flightsToInsert = data.flights.map((f: any) => {
+      let fileData = f.ticketFileData || '';
+      if (fileData === "(large_preview_hidden_in_local_storage)") {
+        const found = existingFlights.find((ef: any) => p(ef.id, 'f') === p(f.id, 'f'));
+        if (found && found.ticketFileData && found.ticketFileData !== "(large_preview_hidden_in_local_storage)") {
+          fileData = found.ticketFileData;
+        }
+      }
+      return {
+        id: p(f.id, 'f'),
+        itineraryId,
+        airline: f.airline || '',
+        logoUrl: f.logoUrl || '',
+        flightCode: f.flightCode || '',
+        departureCity: f.departureCity || '',
+        departureCode: f.departureCode || '',
+        departureTime: f.departureTime || '',
+        arrivalCity: f.arrivalCity || '',
+        arrivalCode: f.arrivalCode || '',
+        arrivalTime: f.arrivalTime || '',
+        duration: f.duration || '',
+        dateStr: f.dateStr || '',
+        arrivalDateStr: f.arrivalDateStr || '',
+        status: f.status || 'Confirmado',
+        isDeleted: f.isDeleted || false,
+        gate: f.gate || '',
+        locator: f.locator || '',
+        passengers: f.passengers || '',
+        seats: f.seats || '',
+        ticketFileName: f.ticketFileName || '',
+        ticketFileData: fileData,
+        createdByEmail: f.createdByEmail || null
+      };
+    });
+
+    await tx.insert(flights).values(flightsToInsert);
+
+    const passengersToInsert: any[] = [];
+    data.flights.forEach((f: any, idx: number) => {
+      const flightDbId = flightsToInsert[idx].id;
+      if (f.passengersList && Array.isArray(f.passengersList)) {
+        f.passengersList.forEach((pass: any) => {
+          passengersToInsert.push({
+            id: p(pass.id, 'fp'),
+            flightId: flightDbId,
+            name: pass.name || '',
+            seat: pass.seat || ''
+          });
+        });
+      }
+    });
+
+    if (passengersToInsert.length > 0) {
+      await tx.insert(flightPassengers).values(passengersToInsert);
+    }
+  }
+
+  // 7. General Tips
+  if (data.generalTips && data.generalTips.length > 0) {
+    await tx.insert(generalTips).values(data.generalTips.map((tip: any) => ({
+      id: p(tip.id, 'gt'),
+      itineraryId,
+      category: tip.category || '',
+      title: tip.title || '',
+      content: tip.content || ''
+    })));
+  }
+
+  // 8. Notifications
+  if (data.notifications && data.notifications.length > 0) {
+    await tx.insert(notifications).values(data.notifications.map((n: any) => ({
+      id: p(n.id, 'notif'),
+      itineraryId,
+      title: n.title || '',
+      description: n.description || '',
+      time: n.time || '',
+      read: n.read || false,
+      type: n.type || 'system'
+    })));
+  }
+
+  // 9. Transaction Logs
+  if (data.transactionLogs && data.transactionLogs.length > 0) {
+    await tx.insert(transactionLogs).values(data.transactionLogs.map((log: any) => ({
+      id: p(log.id, 'log'),
+      itineraryId,
+      user: log.user || '',
+      userEmail: log.userEmail || '',
+      action: log.action || '',
+      itemType: log.itemType || '',
+      itemId: log.itemId ? p(log.itemId, 'item') : '',
+      itemDesc: log.itemDesc || '',
+      timestamp: log.timestamp || '',
+    })));
+  }
+}
+
 const MAX_GEMINI_CALLS_PER_DAY = 15;
 
 const geminiQuotaMiddleware = async (req: any, res: any, next: any) => {
@@ -703,57 +1073,7 @@ async function startServer() {
 
       
       // Transform records back to expected JSON structure
-      const response = dbItineraries.map((itinerary) => {
-         return {
-           id: itinerary.id,
-           ownerId: itinerary.ownerId,
-           title: itinerary.title,
-           data: {
-             travelers: itinerary.travelers,
-             destinations: itinerary.destinations.map(d => ({
-                id: d.id,
-                city: d.city,
-                state: d.state,
-                country: d.country,
-                dates: d.dates,
-                startDate: d.startDate,
-                endDate: d.endDate,
-                hotelName: d.hotelName,
-                hotelLink: d.hotelLink,
-                hotelAddress: d.hotelAddress,
-                hotelCoords: (d.hotelCoordsLat && d.hotelCoordsLng) ? { lat: d.hotelCoordsLat, lng: d.hotelCoordsLng } : undefined,
-                checkInTime: d.checkInTime,
-                checkOutTime: d.checkOutTime,
-                checkInDate: d.checkInDate,
-                notes: d.notes,
-                days: d.days.map(day => ({
-                  id: day.id,
-                  dayNumber: day.dayNumber,
-                  dateStr: day.dateStr,
-                  title: day.title,
-                  activities: day.activities
-                })).sort((a, b) => a.dayNumber - b.dayNumber)
-             })),
-             costs: itinerary.costs,
-             costCategories: itinerary.costCategories.map((cc) => {
-               const prefix = `${itinerary.id}_`;
-               const originalId = cc.id.startsWith(prefix) ? cc.id.slice(prefix.length) : cc.id;
-               return {
-                 ...cc,
-                 id: originalId
-               };
-             }),
-             documents: itinerary.documents,
-             flights: itinerary.flights.map((f) => ({
-                ...f,
-                passengersList: (f as any).passengersList || []
-             })),
-             generalTips: itinerary.generalTips,
-             notifications: itinerary.notifications,
-             transactionLogs: itinerary.transactionLogs
-           }
-         };
-      });
+      const response = dbItineraries.map((itinerary) => mapItineraryFromDb(itinerary));
 
       const userRecord = await db.query.users.findFirst({
         where: eq(users.id, req.user.id)
@@ -797,220 +1117,7 @@ async function startServer() {
       }).returning();
 
       if (data) {
-        // If initial template data is passed
-        if (data.destinations && data.destinations.length > 0) {
-          const dbDestinationsValues = data.destinations.map((d: any) => ({
-            id: d.id || 'd-' + Math.random().toString(36).substring(7),
-            itineraryId: itinerary.id,
-            city: d.city || '',
-            state: d.state || '',
-            country: d.country || '',
-            dates: d.dates || '',
-            startDate: d.startDate || '',
-            endDate: d.endDate || '',
-            hotelName: d.hotelName || '',
-            hotelLink: d.hotelLink || '',
-            hotelAddress: d.hotelAddress || '',
-            hotelCoordsLat: d.hotelCoords?.lat ?? null,
-            hotelCoordsLng: d.hotelCoords?.lng ?? null,
-            checkInTime: d.checkInTime || '',
-            checkOutTime: d.checkOutTime || '',
-            checkInDate: d.checkInDate || '',
-            notes: d.notes || ''
-          }));
-          await db.insert(destinations).values(dbDestinationsValues);
-
-          if (data.costCategories && data.costCategories.length > 0) {
-            await db.insert(costCategories).values(data.costCategories.map((c: any) => {
-              const rawId = c.id || 'cc-' + Math.random().toString(36).substring(7);
-              const customId = rawId.startsWith(`${itinerary.id}_`) ? rawId : `${itinerary.id}_${rawId}`;
-              return {
-                id: customId,
-                itineraryId: itinerary.id,
-                label: c.label || '',
-                color: c.color || '#94A3B8'
-              };
-            }));
-          }
-
-          const daysToInsert: any[] = [];
-          const activitiesToInsert: any[] = [];
-
-          data.destinations.forEach((d: any, dIdx: number) => {
-            if (d.days && d.days.length > 0) {
-              d.days.forEach((day: any) => {
-                const dayDbId = day.id || 'day-' + Math.random().toString(36).substring(7);
-                daysToInsert.push({
-                  id: dayDbId,
-                  destinationId: dbDestinationsValues[dIdx].id,
-                  dayNumber: day.dayNumber || 0,
-                  dateStr: day.dateStr || '',
-                  title: day.title || ''
-                });
-
-                if (day.activities && day.activities.length > 0) {
-                  day.activities.forEach((act: any) => {
-                    activitiesToInsert.push({
-                      id: act.id || 'act-' + Math.random().toString(36).substring(7),
-                      dayId: dayDbId,
-                      time: act.time || '',
-                      location: act.location || '',
-                      duration: act.duration || '',
-                      cost: act.cost || '',
-                      mapsQuery: act.mapsQuery || '',
-                      websiteLink: act.websiteLink || '',
-                      parking: act.parking || '',
-                      notes: act.notes || '',
-                      ticketFileName: act.ticketFileName || '',
-                      ticketFileData: act.ticketFileData || '',
-                      date: act.date || ''
-                    });
-                  });
-                }
-              });
-            }
-          });
-
-          if (daysToInsert.length > 0) await db.insert(itineraryDays).values(daysToInsert);
-          if (activitiesToInsert.length > 0) {
-            const chunkSize = 20;
-            for (let i = 0; i < activitiesToInsert.length; i += chunkSize) {
-              const chunk = activitiesToInsert.slice(i, i + chunkSize);
-              await db.insert(activities).values(chunk);
-            }
-          }
-        }
-
-        if (data.travelers && data.travelers.length > 0) {
-          await db.insert(travelers).values(data.travelers.map((t: any) => ({
-            id: t.id || 't-' + Math.random().toString(36).substring(7),
-            itineraryId: itinerary.id,
-            name: t.name || '',
-            role: t.role || '',
-            email: t.email || '',
-            checkedActivities: t.checkedActivities || '',
-            packingItems: t.packingItems || ''
-          })));
-        }
-
-        if (data.costs && data.costs.length > 0) {
-          await db.insert(costs).values(data.costs.map((c: any) => ({
-            id: c.id || 'c-' + Math.random().toString(36).substring(7),
-            itineraryId: itinerary.id,
-            category: c.category || '',
-            description: c.description || '',
-            notes: c.notes || '',
-            link: c.link || '',
-            totalCostBRL: Number(c.totalCostBRL) || 0,
-            status: c.status || '',
-            dateRange: c.dateRange || '',
-            destinationId: c.destinationId || '',
-            isPersonal: c.isPersonal ?? false,
-            createdByEmail: c.createdByEmail || null,
-            receiptName: c.receiptName || null,
-            receiptData: c.receiptData || null
-          })));
-        }
-
-        if (data.documents && data.documents.length > 0) {
-          await db.insert(documents).values(data.documents.map((doc: any) => ({
-            id: doc.id || 'doc-' + Math.random().toString(36).substring(7),
-            itineraryId: itinerary.id,
-            type: doc.type || 'other',
-            title: doc.title || '',
-            airline: doc.airline || '',
-            flightNumber: doc.flightNumber || '',
-            passengerName: doc.passengerName || '',
-            fileData: doc.fileData || '',
-            fileName: doc.fileName || '',
-            notes: doc.notes || '',
-            uploadedAt: doc.uploadedAt || new Date().toISOString()
-          })));
-        }
-
-        if (data.flights && data.flights.length > 0) {
-          const flightsToInsert = data.flights.map((f: any) => ({
-            id: f.id || 'f-' + Math.random().toString(36).substring(7),
-            itineraryId: itinerary.id,
-            airline: f.airline || '',
-            logoUrl: f.logoUrl || '',
-            flightCode: f.flightCode || '',
-            departureCity: f.departureCity || '',
-            departureCode: f.departureCode || '',
-            departureTime: f.departureTime || '',
-            arrivalCity: f.arrivalCity || '',
-            arrivalCode: f.arrivalCode || '',
-            arrivalTime: f.arrivalTime || '',
-            duration: f.duration || '',
-            dateStr: f.dateStr || '',
-            arrivalDateStr: f.arrivalDateStr || '',
-            status: f.status || 'Confirmado',
-            isDeleted: f.isDeleted || false,
-            gate: f.gate || '',
-            locator: f.locator || '',
-            passengers: f.passengers || '',
-            seats: f.seats || '',
-            ticketFileName: f.ticketFileName || '',
-            ticketFileData: f.ticketFileData || ''
-          }));
-
-          await db.insert(flights).values(flightsToInsert);
-
-          const passengersToInsert: any[] = [];
-          data.flights.forEach((f: any, idx: number) => {
-            const flightDbId = flightsToInsert[idx].id;
-            if (f.passengersList && Array.isArray(f.passengersList)) {
-              f.passengersList.forEach((pass: any) => {
-                passengersToInsert.push({
-                  id: pass.id || 'fp-' + Math.random().toString(36).substring(7),
-                  flightId: flightDbId,
-                  name: pass.name || '',
-                  seat: pass.seat || ''
-                });
-              });
-            }
-          });
-
-          if (passengersToInsert.length > 0) {
-            await db.insert(flightPassengers).values(passengersToInsert);
-          }
-        }
-
-        if (data.generalTips && data.generalTips.length > 0) {
-          await db.insert(generalTips).values(data.generalTips.map((tip: any) => ({
-            id: tip.id || 'tip-' + Math.random().toString(36).substring(7),
-            itineraryId: itinerary.id,
-            category: tip.category || '',
-            title: tip.title || '',
-            content: tip.content || ''
-          })));
-        }
-
-        if (data.notifications && data.notifications.length > 0) {
-          await db.insert(notifications).values(data.notifications.map((n: any) => ({
-            id: n.id || 'notif-' + Math.random().toString(36).substring(7),
-            itineraryId: itinerary.id,
-            title: n.title || '',
-            description: n.description || '',
-            time: n.time || '',
-            read: n.read || false,
-            type: n.type || 'system'
-          })));
-        }
-
-        if (data.transactionLogs && data.transactionLogs.length > 0) {
-          await db.insert(transactionLogs).values(data.transactionLogs.map((log: any) => ({
-            id: log.id || 'log-' + Math.random().toString(36).substring(7),
-            itineraryId: itinerary.id,
-            user: log.user || '',
-            userEmail: log.userEmail || '',
-            action: log.action || '',
-            itemType: log.itemType || '',
-            itemId: log.itemId || '',
-            itemDesc: log.itemDesc || '',
-            timestamp: log.timestamp || '',
-          })));
-        }
+        await saveItineraryData(db, itinerary.id, data);
       }
 
       res.json({ success: true, itinerary: { id: itinerary.id, title: itinerary.title, data: data || {} } });
@@ -1088,285 +1195,12 @@ async function startServer() {
         await tx.delete(notifications).where(eq(notifications.itineraryId, itineraryId));
         await tx.delete(transactionLogs).where(eq(transactionLogs.itineraryId, itineraryId));
 
-        if (data.travelers && data.travelers.length > 0) {
-          await tx.insert(travelers).values(data.travelers.map((t: any) => ({
-            id: t.id || 't-' + Math.random().toString(36).substring(7),
-            itineraryId,
-            name: t.name || '',
-            role: t.role || '',
-            email: t.email || '',
-            checkedActivities: t.checkedActivities || '',
-            packingItems: t.packingItems || '',
-            createdByEmail: t.createdByEmail || null
-          })));
-        }
-
-        if (data.costCategories && data.costCategories.length > 0) {
-          await tx.insert(costCategories).values(data.costCategories.map((c: any) => {
-            const rawId = c.id || 'cc-' + Math.random().toString(36).substring(7);
-            const customId = rawId.startsWith(`${itineraryId}_`) ? rawId : `${itineraryId}_${rawId}`;
-            return {
-              id: customId,
-              itineraryId,
-              label: c.label || '',
-              color: c.color || '#94A3B8'
-            };
-          }));
-        }
-
-        if (data.destinations && data.destinations.length > 0) {
-          const seenDestIds = new Set<string>();
-          const destIdMap = new Map<string, string>();
-          const dbDestinationsValues = data.destinations.map((d: any) => {
-            const rawId = d.id || 'd-' + Math.random().toString(36).substring(7);
-            let destId = rawId;
-            if (seenDestIds.has(destId)) {
-              destId = 'd-' + Math.random().toString(36).substring(7);
-            }
-            seenDestIds.add(destId);
-            if (d.id) {
-              destIdMap.set(d.id, destId);
-            }
-            return {
-              id: destId,
-              itineraryId,
-              city: d.city || '',
-              state: d.state || '',
-              country: d.country || '',
-              dates: d.dates || '',
-              startDate: d.startDate || d.dates?.split(" - ")[0] || '',
-              endDate: d.endDate || d.dates?.split(" - ")[1] || '',
-              hotelName: d.hotelName || '',
-              hotelLink: d.hotelLink || '',
-              hotelAddress: d.hotelAddress || '',
-              hotelCoordsLat: d.hotelCoords?.lat ?? null,
-              hotelCoordsLng: d.hotelCoords?.lng ?? null,
-              checkInTime: d.checkInTime || '',
-              checkOutTime: d.checkOutTime || '',
-              checkInDate: d.checkInDate || '',
-              notes: d.notes || '',
-              createdByEmail: d.createdByEmail || null
-            };
-          });
-          await tx.insert(destinations).values(dbDestinationsValues);
-
-          const daysToInsert: any[] = [];
-          const activitiesToInsert: any[] = [];
-          const seenDayIds = new Set<string>();
-          const seenActIds = new Set<string>();
-
-          data.destinations.forEach((d: any, dIdx: number) => {
-            if (d.days && d.days.length > 0) {
-              d.days.forEach((day: any) => {
-                const rawDayId = day.id || 'day-' + Math.random().toString(36).substring(7);
-                let dayDbId = rawDayId;
-                if (seenDayIds.has(dayDbId)) {
-                  dayDbId = 'day-' + Math.random().toString(36).substring(7);
-                }
-                seenDayIds.add(dayDbId);
-
-                daysToInsert.push({
-                   id: dayDbId,
-                   destinationId: dbDestinationsValues[dIdx].id,
-                   dayNumber: day.dayNumber || 0,
-                   dateStr: day.dateStr || '',
-                   title: day.title || ''
-                });
-
-                if (day.activities && day.activities.length > 0) {
-                  day.activities.forEach((act: any) => {
-                    let fileData = act.ticketFileData || '';
-                    if (fileData === "(large_preview_hidden_in_local_storage)") {
-                      const found = existingActivities.find((ea: any) => ea.id === act.id);
-                      if (found && found.ticketFileData && found.ticketFileData !== "(large_preview_hidden_in_local_storage)") {
-                        fileData = found.ticketFileData;
-                      }
-                    }
-                    const rawActId = act.id || 'act-' + Math.random().toString(36).substring(7);
-                    let actDbId = rawActId;
-                    if (seenActIds.has(actDbId)) {
-                      actDbId = 'act-' + Math.random().toString(36).substring(7);
-                    }
-                    seenActIds.add(actDbId);
-
-                    activitiesToInsert.push({
-                      id: actDbId,
-                      dayId: dayDbId,
-                      time: act.time || '',
-                      location: act.location || '',
-                      duration: act.duration || '',
-                      cost: act.cost || '',
-                      mapsQuery: act.mapsQuery || '',
-                      websiteLink: act.websiteLink || '',
-                      parking: act.parking || '',
-                      notes: act.notes || '',
-                      ticketFileName: act.ticketFileName || '',
-                      ticketFileData: fileData,
-                      date: act.date || '',
-                      createdByEmail: act.createdByEmail || null
-                    });
-                  });
-                }
-              });
-            }
-          });
-
-          if (daysToInsert.length > 0) await tx.insert(itineraryDays).values(daysToInsert);
-          if (activitiesToInsert.length > 0) {
-            const chunkSize = 20;
-            for (let i = 0; i < activitiesToInsert.length; i += chunkSize) {
-              const chunk = activitiesToInsert.slice(i, i + chunkSize);
-              await tx.insert(activities).values(chunk);
-            }
-          }
-        }
-
-        if (data.costs && data.costs.length > 0) {
-          await tx.insert(costs).values(data.costs.map((c: any) => {
-            let receiptData = c.receiptData || null;
-            if (receiptData === "(large_preview_hidden_in_local_storage)") {
-              const found = existingCosts.find((ec: any) => ec.id === c.id);
-              if (found && found.receiptData && found.receiptData !== "(large_preview_hidden_in_local_storage)") {
-                receiptData = found.receiptData;
-              }
-            }
-            return {
-              id: c.id || 'c-' + Math.random().toString(36).substring(7),
-              itineraryId,
-              category: c.category || '',
-              description: c.description || '',
-              notes: c.notes || '',
-              link: c.link || '',
-              totalCostBRL: Number(c.totalCostBRL) || 0,
-              status: c.status || '',
-              dateRange: c.dateRange || '',
-              destinationId: c.destinationId || '',
-              isPersonal: c.isPersonal ?? false,
-              createdByEmail: c.createdByEmail || null,
-              receiptName: c.receiptName || null,
-              receiptData: receiptData
-            };
-          }));
-        }
-
-        if (data.documents && data.documents.length > 0) {
-          await tx.insert(documents).values(data.documents.map((doc: any) => {
-            let fileData = doc.fileData || '';
-            if (fileData === "(large_preview_hidden_in_local_storage)") {
-              const found = existingDocuments.find((ed: any) => ed.id === doc.id);
-              if (found && found.fileData && found.fileData !== "(large_preview_hidden_in_local_storage)") {
-                fileData = found.fileData;
-              }
-            }
-            return {
-              id: doc.id || 'doc-' + Math.random().toString(36).substring(7),
-              itineraryId,
-              type: doc.type || 'other',
-              title: doc.title || '',
-              airline: doc.airline || '',
-              flightNumber: doc.flightNumber || '',
-              passengerName: doc.passengerName || '',
-              fileData: fileData,
-              fileName: doc.fileName || '',
-              notes: doc.notes || '',
-              uploadedAt: doc.uploadedAt || new Date().toISOString(),
-              createdByEmail: doc.createdByEmail || null
-            };
-          }));
-        }
-
-        if (data.flights && data.flights.length > 0) {
-          const flightsToInsert = data.flights.map((f: any) => {
-            let fileData = f.ticketFileData || '';
-            if (fileData === "(large_preview_hidden_in_local_storage)") {
-              const found = existingFlights.find((ef: any) => ef.id === f.id);
-              if (found && found.ticketFileData && found.ticketFileData !== "(large_preview_hidden_in_local_storage)") {
-                fileData = found.ticketFileData;
-              }
-            }
-            return {
-              id: f.id || 'f-' + Math.random().toString(36).substring(7),
-              itineraryId,
-              airline: f.airline || '',
-              logoUrl: f.logoUrl || '',
-              flightCode: f.flightCode || '',
-              departureCity: f.departureCity || '',
-              departureCode: f.departureCode || '',
-              departureTime: f.departureTime || '',
-              arrivalCity: f.arrivalCity || '',
-              arrivalCode: f.arrivalCode || '',
-              arrivalTime: f.arrivalTime || '',
-              duration: f.duration || '',
-              dateStr: f.dateStr || '',
-              arrivalDateStr: f.arrivalDateStr || '',
-              status: f.status || 'Confirmado',
-              isDeleted: f.isDeleted || false,
-              gate: f.gate || '',
-              locator: f.locator || '',
-              passengers: f.passengers || '',
-              seats: f.seats || '',
-              ticketFileName: f.ticketFileName || '',
-              ticketFileData: fileData,
-              createdByEmail: f.createdByEmail || null
-            };
-          });
-
-          await tx.insert(flights).values(flightsToInsert);
-
-          const passengersToInsert: any[] = [];
-          data.flights.forEach((f: any, idx: number) => {
-            const flightDbId = flightsToInsert[idx].id;
-            if (f.passengersList && Array.isArray(f.passengersList)) {
-              f.passengersList.forEach((pass: any) => {
-                passengersToInsert.push({
-                  id: pass.id || 'fp-' + Math.random().toString(36).substring(7),
-                  flightId: flightDbId,
-                  name: pass.name || '',
-                  seat: pass.seat || ''
-                });
-              });
-            }
-          });
-
-          if (passengersToInsert.length > 0) {
-            await tx.insert(flightPassengers).values(passengersToInsert);
-          }
-        }
-
-        if (data.generalTips && data.generalTips.length > 0) {
-          await tx.insert(generalTips).values(data.generalTips.map((tip: any) => ({
-            id: tip.id || 'gt-' + Math.random().toString(36).substring(7),
-            itineraryId,
-            category: tip.category || '',
-            title: tip.title || '',
-            content: tip.content || ''
-          })));
-        }
-        if (data.notifications && data.notifications.length > 0) {
-          await tx.insert(notifications).values(data.notifications.map((n: any) => ({
-            id: n.id || 'notif-' + Math.random().toString(36).substring(7),
-            itineraryId,
-            title: n.title || '',
-            description: n.description || '',
-            time: n.time || '',
-            read: n.read || false,
-            type: n.type || 'system'
-          })));
-        }
-        
-        if (data.transactionLogs && data.transactionLogs.length > 0) {
-          await tx.insert(transactionLogs).values(data.transactionLogs.map((log: any) => ({
-            id: log.id || 'log-' + Math.random().toString(36).substring(7),
-            itineraryId,
-            user: log.user || '',
-            userEmail: log.userEmail || '',
-            action: log.action || '',
-            itemType: log.itemType || '',
-            itemId: log.itemId || '',
-            itemDesc: log.itemDesc || '',
-            timestamp: log.timestamp || '',
-          })));
-        }
+        await saveItineraryData(tx, itineraryId, data, {
+          existingFlights,
+          existingDocuments,
+          existingCosts,
+          existingActivities
+        });
       }
 
       });
@@ -2269,216 +2103,8 @@ Não adicione qualquer texto introdutório ou explicativo. Responda apenas com a
         isShared: true, 
       }).returning();
       
-      // INSERT Travelers
-      if (data.travelers && data.travelers.length > 0) {
-        await db.insert(travelers).values(data.travelers.map((t: any) => ({
-          id: t.id || 't-' + Math.random().toString(36).substring(7),
-          itineraryId: itinerary.id,
-          name: t.name || '',
-          role: t.role || '',
-          email: t.email || '',
-          checkedActivities: t.checkedActivities || '',
-          packingItems: t.packingItems || ''
-        })));
-      }
-
-      // INSERT Destinations & nested items
-      if (data.destinations && data.destinations.length > 0) {
-        // Insert all destinations first
-        const dbDestinationsValues = data.destinations.map((d: any) => ({
-          id: d.id || 'd-' + Math.random().toString(36).substring(7),
-          itineraryId: itinerary.id,
-          city: d.city || '',
-          state: d.state || '',
-          country: d.country || '',
-          dates: d.dates || '',
-          startDate: d.startDate || '',
-          endDate: d.endDate || '',
-          hotelName: d.hotelName || '',
-          hotelLink: d.hotelLink || '',
-          hotelAddress: d.hotelAddress || '',
-          hotelCoordsLat: d.hotelCoords?.lat ?? null,
-          hotelCoordsLng: d.hotelCoords?.lng ?? null,
-          checkInTime: d.checkInTime || '',
-          checkOutTime: d.checkOutTime || '',
-          checkInDate: d.checkInDate || '',
-          notes: d.notes || ''
-        }));
-        await db.insert(destinations).values(dbDestinationsValues);
-
-        const daysToInsert: any[] = [];
-        const activitiesToInsert: any[] = [];
-
-        data.destinations.forEach((d: any, dIdx: number) => {
-          if (d.days && d.days.length > 0) {
-            d.days.forEach((day: any) => {
-               const dayDbId = day.id || 'day-' + Math.random().toString(36).substring(7);
-               daysToInsert.push({
-                 id: dayDbId,
-                 destinationId: dbDestinationsValues[dIdx].id,
-                 dayNumber: day.dayNumber || 0,
-                 dateStr: day.dateStr || '',
-                 title: day.title || ''
-               });
-               
-               if (day.activities && day.activities.length > 0) {
-                  day.activities.forEach((act: any) => {
-                     activitiesToInsert.push({
-                       id: act.id || 'act-' + Math.random().toString(36).substring(7),
-                       dayId: dayDbId,
-                       time: act.time || '',
-                       location: act.location || '',
-                       duration: act.duration || '',
-                       cost: act.cost || '',
-                       mapsQuery: act.mapsQuery || '',
-                       websiteLink: act.websiteLink || '',
-                       parking: act.parking || '',
-                       notes: act.notes || '',
-                       ticketFileName: act.ticketFileName || '',
-                       ticketFileData: act.ticketFileData || '',
-                       date: act.date || ''
-                     });
-                  });
-               }
-            });
-          }
-        });
-
-        if (daysToInsert.length > 0) await db.insert(itineraryDays).values(daysToInsert);
-        
-        // Chunk activities because payload could be huge (especially if base64)
-        if (activitiesToInsert.length > 0) {
-           const chunkSize = 20;
-           for (let i = 0; i < activitiesToInsert.length; i += chunkSize) {
-             const chunk = activitiesToInsert.slice(i, i + chunkSize);
-             await db.insert(activities).values(chunk);
-           }
-        }
-      }
-
-      // INSERT Cost Categories
-      if (data.costCategories && data.costCategories.length > 0) {
-        await db.insert(costCategories).values(data.costCategories.map((c: any) => {
-          const rawId = c.id || 'cc-' + Math.random().toString(36).substring(7);
-          const customId = rawId.startsWith(`${itinerary.id}_`) ? rawId : `${itinerary.id}_${rawId}`;
-          return {
-            id: customId,
-            itineraryId: itinerary.id,
-            label: c.label || '',
-            color: c.color || '#94A3B8'
-          };
-        }));
-      }
-
-      // INSERT Costs
-      if (data.costs && data.costs.length > 0) {
-         await db.insert(costs).values(data.costs.map((c: any) => ({
-           id: c.id || 'c-' + Math.random().toString(36).substring(7),
-           itineraryId: itinerary.id,
-           category: c.category || '',
-           description: c.description || '',
-           notes: c.notes || '',
-           link: c.link || '',
-           totalCostBRL: Number(c.totalCostBRL) || 0,
-           status: c.status || '',
-           dateRange: c.dateRange || '',
-           destinationId: c.destinationId || '',
-           isPersonal: c.isPersonal ?? false,
-           createdByEmail: c.createdByEmail || null,
-           receiptName: c.receiptName || null,
-           receiptData: c.receiptData || null
-         })));
-      }
-
-      // INSERT Documents
-      if (data.documents && data.documents.length > 0) {
-         await db.insert(documents).values(data.documents.map((doc: any) => ({
-           id: doc.id || 'doc-' + Math.random().toString(36).substring(7),
-           itineraryId: itinerary.id,
-           type: doc.type || 'other',
-           title: doc.title || '',
-           airline: doc.airline || '',
-           flightNumber: doc.flightNumber || '',
-           passengerName: doc.passengerName || '',
-           fileData: doc.fileData || '',
-           fileName: doc.fileName || '',
-           notes: doc.notes || '',
-           uploadedAt: doc.uploadedAt || new Date().toISOString()
-         })));
-      }
-
-      // INSERT Flights
-      if (data.flights && data.flights.length > 0) {
-         const flightsToInsert = data.flights.map((f: any) => ({
-           id: f.id || 'f-' + Math.random().toString(36).substring(7),
-           itineraryId: itinerary.id,
-           airline: f.airline || '',
-           logoUrl: f.logoUrl || '',
-           flightCode: f.flightCode || '',
-           departureCity: f.departureCity || '',
-           departureCode: f.departureCode || '',
-           departureTime: f.departureTime || '',
-           arrivalCity: f.arrivalCity || '',
-           arrivalCode: f.arrivalCode || '',
-           arrivalTime: f.arrivalTime || '',
-           duration: f.duration || '',
-           dateStr: f.dateStr || '',
-           arrivalDateStr: f.arrivalDateStr || '',
-           status: f.status || 'Confirmado',
-           isDeleted: f.isDeleted || false,
-           gate: f.gate || '',
-           locator: f.locator || '',
-           passengers: f.passengers || '',
-           seats: f.seats || '',
-           ticketFileName: f.ticketFileName || '',
-           ticketFileData: f.ticketFileData || ''
-         }));
-
-         await db.insert(flights).values(flightsToInsert);
-
-         const passengersToInsert: any[] = [];
-         data.flights.forEach((f: any, idx: number) => {
-           const flightDbId = flightsToInsert[idx].id;
-           if (f.passengersList && Array.isArray(f.passengersList)) {
-             f.passengersList.forEach((pass: any) => {
-               passengersToInsert.push({
-                 id: pass.id || 'fp-' + Math.random().toString(36).substring(7),
-                 flightId: flightDbId,
-                 name: pass.name || '',
-                 seat: pass.seat || ''
-               });
-             });
-           }
-         });
-
-         if (passengersToInsert.length > 0) {
-           await db.insert(flightPassengers).values(passengersToInsert);
-         }
-      }
-
-      // INSERT General Tips
-      if (data.generalTips && data.generalTips.length > 0) {
-         await db.insert(generalTips).values(data.generalTips.map((tip: any) => ({
-           id: tip.id || 'tip-' + Math.random().toString(36).substring(7),
-           itineraryId: itinerary.id,
-           category: tip.category || '',
-           title: tip.title || '',
-           content: tip.content || ''
-         })));
-      }
-
-      // INSERT Notifications
-      if (data.notifications && data.notifications.length > 0) {
-         await db.insert(notifications).values(data.notifications.map((n: any, idx: number) => ({
-           id: n.id || 'notif-' + Math.random().toString(36).substring(7),
-           itineraryId: itinerary.id,
-           title: n.title || '',
-           description: n.description || '',
-           time: n.time || '',
-           read: n.read || false,
-           type: n.type || 'system'
-         })));
-      }
+      // INSERT ALL DATA WITH PREFIXING
+      await saveItineraryData(db, itinerary.id, data);
 
       res.json({ success: true, message: "Dados relacionais migrados com sucesso", itinerary });
     } catch (error: any) {
@@ -2571,56 +2197,7 @@ Não adicione qualquer texto introdutório ou explicativo. Responda apenas com a
       });
 
       // Transform records back to expected JSON structure for front-end
-      const response = dbItineraries.map((itinerary) => {
-        return {
-          id: itinerary.id,
-          ownerId: itinerary.ownerId,
-          title: itinerary.title,
-          data: {
-            travelers: itinerary.travelers,
-            destinations: itinerary.destinations.map((d) => ({
-              id: d.id,
-              city: d.city,
-              state: d.state,
-              country: d.country,
-              dates: d.dates,
-              startDate: d.startDate,
-              endDate: d.endDate,
-              hotelName: d.hotelName,
-              hotelLink: d.hotelLink,
-              hotelAddress: d.hotelAddress,
-              hotelCoords: (d.hotelCoordsLat && d.hotelCoordsLng) ? { lat: d.hotelCoordsLat, lng: d.hotelCoordsLng } : undefined,
-              checkInTime: d.checkInTime,
-              checkOutTime: d.checkOutTime,
-              checkInDate: d.checkInDate,
-              notes: d.notes,
-              days: d.days.map((day) => ({
-                id: day.id,
-                dayNumber: day.dayNumber,
-                dateStr: day.dateStr,
-                title: day.title,
-                activities: day.activities
-              })).sort((a, b) => a.dayNumber - b.dayNumber)
-            })),
-            costs: itinerary.costs,
-            costCategories: itinerary.costCategories.map((cc) => {
-              const prefix = `${itinerary.id}_`;
-              const originalId = cc.id.startsWith(prefix) ? cc.id.slice(prefix.length) : cc.id;
-              return {
-                ...cc,
-                id: originalId
-              };
-            }),
-            documents: itinerary.documents,
-            flights: itinerary.flights.map((f) => ({
-              ...f,
-              passengersList: (f as any).passengersList || []
-            })),
-            generalTips: itinerary.generalTips,
-            notifications: itinerary.notifications
-          }
-        };
-      });
+      const response = dbItineraries.map((itinerary) => mapItineraryFromDb(itinerary));
 
       res.json({ success: true, email: cleanEmail, itineraries: response, hasPassword, isFirstAccess: isFirstAccessInDb });
     } catch (err: any) {
