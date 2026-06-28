@@ -138,52 +138,99 @@ async function saveItineraryData(
     return `${prefix}${strId}`;
   };
 
+  // Sets to track unique IDs during this batch insertion to prevent "duplicate key" errors
+  const seenTravelers = new Set<string>();
+  const seenCostCategories = new Set<string>();
+  const seenDestinations = new Set<string>();
+  const seenDays = new Set<string>();
+  const seenActivities = new Set<string>();
+  const seenCosts = new Set<string>();
+  const seenDocuments = new Set<string>();
+  const seenFlights = new Set<string>();
+  const seenPassengers = new Set<string>();
+  const seenTips = new Set<string>();
+  const seenNotifications = new Set<string>();
+  const seenLogs = new Set<string>();
+
   // 1. Travelers
   if (data.travelers && data.travelers.length > 0) {
-    await tx.insert(travelers).values(data.travelers.map((t: any) => ({
-      id: p(t.id, 't'),
-      itineraryId,
-      name: t.name || '',
-      role: t.role || '',
-      email: t.email || '',
-      checkedActivities: t.checkedActivities || '',
-      packingItems: t.packingItems || '',
-      createdByEmail: t.createdByEmail || null
-    })));
+    const travelersToInsert: any[] = [];
+    data.travelers.forEach((t: any) => {
+      let tId = p(t.id, 't');
+      if (seenTravelers.has(tId)) {
+        tId = `${prefix}t-${Math.random().toString(36).substring(7)}-dup`;
+      }
+      seenTravelers.add(tId);
+
+      travelersToInsert.push({
+        id: tId,
+        itineraryId,
+        name: t.name || '',
+        role: t.role || '',
+        email: t.email || '',
+        checkedActivities: t.checkedActivities || '',
+        packingItems: t.packingItems || '',
+        createdByEmail: t.createdByEmail || null
+      });
+    });
+    if (travelersToInsert.length > 0) {
+      await tx.insert(travelers).values(travelersToInsert);
+    }
   }
 
   // 2. Cost Categories
   if (data.costCategories && data.costCategories.length > 0) {
-    await tx.insert(costCategories).values(data.costCategories.map((c: any) => ({
-      id: p(c.id, 'cc'),
-      itineraryId,
-      label: c.label || '',
-      color: c.color || '#94A3B8'
-    })));
+    const costCategoriesToInsert: any[] = [];
+    data.costCategories.forEach((c: any) => {
+      let ccId = p(c.id, 'cc');
+      if (seenCostCategories.has(ccId)) {
+        ccId = `${prefix}cc-${Math.random().toString(36).substring(7)}-dup`;
+      }
+      seenCostCategories.add(ccId);
+
+      costCategoriesToInsert.push({
+        id: ccId,
+        itineraryId,
+        label: c.label || '',
+        color: c.color || '#94A3B8'
+      });
+    });
+    if (costCategoriesToInsert.length > 0) {
+      await tx.insert(costCategories).values(costCategoriesToInsert);
+    }
   }
 
   // 3. Destinations, Days, and Activities
   if (data.destinations && data.destinations.length > 0) {
-    const dbDestinationsValues = data.destinations.map((d: any) => ({
-      id: p(d.id, 'd'),
-      itineraryId,
-      city: d.city || '',
-      state: d.state || '',
-      country: d.country || '',
-      dates: d.dates || '',
-      startDate: d.startDate || d.dates?.split(" - ")[0] || '',
-      endDate: d.endDate || d.dates?.split(" - ")[1] || '',
-      hotelName: d.hotelName || '',
-      hotelLink: d.hotelLink || '',
-      hotelAddress: d.hotelAddress || '',
-      hotelCoordsLat: d.hotelCoords?.lat ?? null,
-      hotelCoordsLng: d.hotelCoords?.lng ?? null,
-      checkInTime: d.checkInTime || '',
-      checkOutTime: d.checkOutTime || '',
-      checkInDate: d.checkInDate || '',
-      notes: d.notes || '',
-      createdByEmail: d.createdByEmail || null
-    }));
+    const dbDestinationsValues: any[] = [];
+    data.destinations.forEach((d: any) => {
+      let dId = p(d.id, 'd');
+      if (seenDestinations.has(dId)) {
+        dId = `${prefix}d-${Math.random().toString(36).substring(7)}-dup`;
+      }
+      seenDestinations.add(dId);
+
+      dbDestinationsValues.push({
+        id: dId,
+        itineraryId,
+        city: d.city || '',
+        state: d.state || '',
+        country: d.country || '',
+        dates: d.dates || '',
+        startDate: d.startDate || d.dates?.split(" - ")[0] || '',
+        endDate: d.endDate || d.dates?.split(" - ")[1] || '',
+        hotelName: d.hotelName || '',
+        hotelLink: d.hotelLink || '',
+        hotelAddress: d.hotelAddress || '',
+        hotelCoordsLat: d.hotelCoords?.lat ?? null,
+        hotelCoordsLng: d.hotelCoords?.lng ?? null,
+        checkInTime: d.checkInTime || '',
+        checkOutTime: d.checkOutTime || '',
+        checkInDate: d.checkInDate || '',
+        notes: d.notes || '',
+        createdByEmail: d.createdByEmail || null
+      });
+    });
     await tx.insert(destinations).values(dbDestinationsValues);
 
     const daysToInsert: any[] = [];
@@ -192,7 +239,12 @@ async function saveItineraryData(
     data.destinations.forEach((d: any, dIdx: number) => {
       if (d.days && d.days.length > 0) {
         d.days.forEach((day: any) => {
-          const dayDbId = p(day.id, 'day');
+          let dayDbId = p(day.id, 'day');
+          if (seenDays.has(dayDbId)) {
+            dayDbId = `${prefix}day-${Math.random().toString(36).substring(7)}-dup`;
+          }
+          seenDays.add(dayDbId);
+
           daysToInsert.push({
             id: dayDbId,
             destinationId: dbDestinationsValues[dIdx].id,
@@ -210,8 +262,15 @@ async function saveItineraryData(
                   fileData = found.ticketFileData;
                 }
               }
+
+              let actDbId = p(act.id, 'act');
+              if (seenActivities.has(actDbId)) {
+                actDbId = `${prefix}act-${Math.random().toString(36).substring(7)}-dup`;
+              }
+              seenActivities.add(actDbId);
+
               activitiesToInsert.push({
-                id: p(act.id, 'act'),
+                id: actDbId,
                 dayId: dayDbId,
                 time: act.time || '',
                 location: act.location || '',
@@ -246,7 +305,14 @@ async function saveItineraryData(
 
   // 4. Costs
   if (data.costs && data.costs.length > 0) {
-    await tx.insert(costs).values(data.costs.map((c: any) => {
+    const costsToInsert: any[] = [];
+    data.costs.forEach((c: any) => {
+      let costId = p(c.id, 'c');
+      if (seenCosts.has(costId)) {
+        costId = `${prefix}c-${Math.random().toString(36).substring(7)}-dup`;
+      }
+      seenCosts.add(costId);
+
       let receiptData = c.receiptData || null;
       if (receiptData === "(large_preview_hidden_in_local_storage)") {
         const found = existingCosts.find((ec: any) => p(ec.id, 'c') === p(c.id, 'c'));
@@ -254,8 +320,9 @@ async function saveItineraryData(
           receiptData = found.receiptData;
         }
       }
-      return {
-        id: p(c.id, 'c'),
+
+      costsToInsert.push({
+        id: costId,
         itineraryId,
         category: c.category || '',
         description: c.description || '',
@@ -264,18 +331,28 @@ async function saveItineraryData(
         totalCostBRL: Number(c.totalCostBRL) || 0,
         status: c.status || '',
         dateRange: c.dateRange || '',
-        destinationId: c.destinationId ? p(c.destinationId, 'd') : '',
+        destinationId: c.destinationId ? p(c.destinationId, 'd') : null,
         isPersonal: c.isPersonal ?? false,
         createdByEmail: c.createdByEmail || null,
         receiptName: c.receiptName || null,
         receiptData
-      };
-    }));
+      });
+    });
+    if (costsToInsert.length > 0) {
+      await tx.insert(costs).values(costsToInsert);
+    }
   }
 
   // 5. Documents
   if (data.documents && data.documents.length > 0) {
-    await tx.insert(documents).values(data.documents.map((doc: any) => {
+    const docsToInsert: any[] = [];
+    data.documents.forEach((doc: any) => {
+      let docId = p(doc.id, 'doc');
+      if (seenDocuments.has(docId)) {
+        docId = `${prefix}doc-${Math.random().toString(36).substring(7)}-dup`;
+      }
+      seenDocuments.add(docId);
+
       let fileData = doc.fileData || '';
       if (fileData === "(large_preview_hidden_in_local_storage)") {
         const found = existingDocuments.find((ed: any) => p(ed.id, 'doc') === p(doc.id, 'doc'));
@@ -283,8 +360,9 @@ async function saveItineraryData(
           fileData = found.fileData;
         }
       }
-      return {
-        id: p(doc.id, 'doc'),
+
+      docsToInsert.push({
+        id: docId,
         itineraryId,
         type: doc.type || 'other',
         title: doc.title || '',
@@ -296,13 +374,22 @@ async function saveItineraryData(
         notes: doc.notes || '',
         uploadedAt: doc.uploadedAt || new Date().toISOString(),
         createdByEmail: doc.createdByEmail || null
-      };
-    }));
+      });
+    });
+    if (docsToInsert.length > 0) {
+      await tx.insert(documents).values(docsToInsert);
+    }
   }
 
   // 6. Flights & Passengers
   if (data.flights && data.flights.length > 0) {
     const flightsToInsert = data.flights.map((f: any) => {
+      let flightId = p(f.id, 'f');
+      if (seenFlights.has(flightId)) {
+        flightId = `${prefix}f-${Math.random().toString(36).substring(7)}-dup`;
+      }
+      seenFlights.add(flightId);
+
       let fileData = f.ticketFileData || '';
       if (fileData === "(large_preview_hidden_in_local_storage)") {
         const found = existingFlights.find((ef: any) => p(ef.id, 'f') === p(f.id, 'f'));
@@ -311,7 +398,7 @@ async function saveItineraryData(
         }
       }
       return {
-        id: p(f.id, 'f'),
+        id: flightId,
         itineraryId,
         airline: f.airline || '',
         logoUrl: f.logoUrl || '',
@@ -344,6 +431,12 @@ async function saveItineraryData(
       const flightDbId = flightsToInsert[idx].id;
       if (f.passengersList && Array.isArray(f.passengersList)) {
         f.passengersList.forEach((pass: any) => {
+          let passId = p(pass.id, 'fp');
+          if (seenPassengers.has(passId)) {
+            passId = `${prefix}fp-${Math.random().toString(36).substring(7)}-dup`;
+          }
+          seenPassengers.add(passId);
+
           let fileData = pass.ticketFileData || null;
           if (fileData === "(large_preview_hidden_in_local_storage)") {
             const existingFlight = existingFlights.find((ef: any) => p(ef.id, 'f') === p(f.id, 'f'));
@@ -353,7 +446,7 @@ async function saveItineraryData(
             }
           }
           passengersToInsert.push({
-            id: p(pass.id, 'fp'),
+            id: passId,
             flightId: flightDbId,
             name: pass.name || '',
             seat: pass.seat || '',
@@ -371,41 +464,77 @@ async function saveItineraryData(
 
   // 7. General Tips
   if (data.generalTips && data.generalTips.length > 0) {
-    await tx.insert(generalTips).values(data.generalTips.map((tip: any) => ({
-      id: p(tip.id, 'gt'),
-      itineraryId,
-      category: tip.category || '',
-      title: tip.title || '',
-      content: tip.content || ''
-    })));
+    const tipsToInsert: any[] = [];
+    data.generalTips.forEach((tip: any) => {
+      let gtId = p(tip.id, 'gt');
+      if (seenTips.has(gtId)) {
+        gtId = `${prefix}gt-${Math.random().toString(36).substring(7)}-dup`;
+      }
+      seenTips.add(gtId);
+
+      tipsToInsert.push({
+        id: gtId,
+        itineraryId,
+        category: tip.category || '',
+        title: tip.title || '',
+        content: tip.content || ''
+      });
+    });
+    if (tipsToInsert.length > 0) {
+      await tx.insert(generalTips).values(tipsToInsert);
+    }
   }
 
   // 8. Notifications
   if (data.notifications && data.notifications.length > 0) {
-    await tx.insert(notifications).values(data.notifications.map((n: any) => ({
-      id: p(n.id, 'notif'),
-      itineraryId,
-      title: n.title || '',
-      description: n.description || '',
-      time: n.time || '',
-      read: n.read || false,
-      type: n.type || 'system'
-    })));
+    const notificationsToInsert: any[] = [];
+    data.notifications.forEach((n: any) => {
+      let notifId = p(n.id, 'notif');
+      if (seenNotifications.has(notifId)) {
+        notifId = `${prefix}notif-${Math.random().toString(36).substring(7)}-dup`;
+      }
+      seenNotifications.add(notifId);
+
+      notificationsToInsert.push({
+        id: notifId,
+        itineraryId,
+        title: n.title || '',
+        description: n.description || '',
+        time: n.time || '',
+        read: n.read || false,
+        type: n.type || 'system'
+      });
+    });
+    if (notificationsToInsert.length > 0) {
+      await tx.insert(notifications).values(notificationsToInsert);
+    }
   }
 
   // 9. Transaction Logs
   if (data.transactionLogs && data.transactionLogs.length > 0) {
-    await tx.insert(transactionLogs).values(data.transactionLogs.map((log: any) => ({
-      id: p(log.id, 'log'),
-      itineraryId,
-      user: log.user || '',
-      userEmail: log.userEmail || '',
-      action: log.action || '',
-      itemType: log.itemType || '',
-      itemId: log.itemId ? p(log.itemId, 'item') : '',
-      itemDesc: log.itemDesc || '',
-      timestamp: log.timestamp || '',
-    })));
+    const logsToInsert: any[] = [];
+    data.transactionLogs.forEach((log: any) => {
+      let logId = p(log.id, 'log');
+      if (seenLogs.has(logId)) {
+        logId = `${prefix}log-${Math.random().toString(36).substring(7)}-dup`;
+      }
+      seenLogs.add(logId);
+
+      logsToInsert.push({
+        id: logId,
+        itineraryId,
+        user: log.user || '',
+        userEmail: log.userEmail || '',
+        action: log.action || '',
+        itemType: log.itemType || '',
+        itemId: log.itemId ? p(log.itemId, 'item') : '',
+        itemDesc: log.itemDesc || '',
+        timestamp: log.timestamp || '',
+      });
+    });
+    if (logsToInsert.length > 0) {
+      await tx.insert(transactionLogs).values(logsToInsert);
+    }
   }
 }
 
