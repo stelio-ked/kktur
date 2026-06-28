@@ -345,11 +345,19 @@ async function saveItineraryData(
       const flightDbId = flightsToInsert[idx].id;
       if (f.passengersList && Array.isArray(f.passengersList)) {
         f.passengersList.forEach((pass: any) => {
+          let fileData = pass.ticketFileData || null;
+          if (fileData && fileData.length > 5000000) { 
+            // Avoid saving very large base64 strings directly in local storage placeholder 
+            // Currently this is stored in Postgres, so it's fine, but if we need a placeholder...
+            // actually we want to store it in DB!
+          }
           passengersToInsert.push({
             id: p(pass.id, 'fp'),
             flightId: flightDbId,
             name: pass.name || '',
-            seat: pass.seat || ''
+            seat: pass.seat || '',
+            ticketFileName: pass.ticketFileName || null,
+            ticketFileData: pass.ticketFileData || null,
           });
         });
       }

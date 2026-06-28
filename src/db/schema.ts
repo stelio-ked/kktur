@@ -163,6 +163,8 @@ export const flightPassengers = pgTable("flight_passengers", {
     .notNull(),
   name: text("name").notNull(),
   seat: text("seat"),
+  ticketFileName: text("ticket_file_name"),
+  ticketFileData: text("ticket_file_data"),
 });
 
 export const generalTips = pgTable("general_tips", {

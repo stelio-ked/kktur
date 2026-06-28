@@ -145,7 +145,7 @@ export default function OverviewTab({
   const [editPassengersList, setEditPassengersList] = useState<FlightPassenger[]>([]);
   const [editTicketFileName, setEditTicketFileName] = useState("");
   const [editTicketFileData, setEditTicketFileData] = useState("");
-  const [viewingBoardingPassFlight, setViewingBoardingPassFlight] = useState<FlightInfo | null>(null);
+  const [viewingBoardingPass, setViewingBoardingPass] = useState<{ flight: FlightInfo, passenger?: FlightPassenger } | null>(null);
 
   // Flight Monitoring States
   const [monitoringId, setMonitoringId] = useState<string | null>(null);
@@ -1019,11 +1019,11 @@ export default function OverviewTab({
                   {flight.ticketFileName ? (
                     <button
                       type="button"
-                      onClick={() => setViewingBoardingPassFlight(flight)}
+                      onClick={() => setViewingBoardingPass({ flight })}
                       className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-lg transition-all flex items-center gap-1 cursor-pointer text-[10px] uppercase tracking-wider shadow-xs shadow-indigo-100"
                     >
                       <Ticket className="w-3.5 h-3.5" />
-                      Cartão de Embarque
+                      Cartão do Voo
                     </button>
                   ) : (
                     !isReadOnly && (
@@ -1045,16 +1045,26 @@ export default function OverviewTab({
                   <p className="text-[10px] font-extrabold text-slate-450 uppercase tracking-wider flex items-center gap-1">
                     <Users className="w-3.5 h-3.5 text-slate-450" /> Passageiros do Voo ({flight.passengersList.length})
                   </p>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-2">
                     {flight.passengersList.map((passenger, pIdx) => (
-                      <span key={passenger.id || pIdx} className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-full px-2.5 py-1 text-[11px] shadow-2xs">
-                        <span className="font-bold text-slate-700">{passenger.name}</span>
+                      <div key={passenger.id || pIdx} className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg pr-1 pl-2.5 py-1 shadow-2xs">
+                        <span className="font-bold text-slate-700 text-[11px]">{passenger.name}</span>
                         {passenger.seat && (
-                          <span className="text-[9px] uppercase font-black tracking-wider text-indigo-700 bg-indigo-50 border border-indigo-100 px-1 py-0.2 rounded-md leading-none shrink-0">
+                          <span className="text-[9px] uppercase font-black tracking-wider text-indigo-700 bg-indigo-50 border border-indigo-100 px-1 py-0.5 rounded-md leading-none shrink-0">
                             {passenger.seat}
                           </span>
                         )}
-                      </span>
+                        {passenger.ticketFileData && (
+                          <button
+                            type="button"
+                            onClick={() => setViewingBoardingPass({ flight, passenger })}
+                            className="ml-1 p-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-md transition-colors cursor-pointer"
+                            title="Ver Cartão de Embarque"
+                          >
+                            <Ticket className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -1611,12 +1621,30 @@ export default function OverviewTab({
                               const val = e.target.value;
                               setEditPassengersList(prev => prev.map((p, idx) => idx === index ? { ...p, seat: val } : p));
                             }}
-                            className="w-20 px-2.5 py-1.5 border border-slate-200 rounded-xl bg-white focus:ring-1 focus:ring-indigo-500 text-xs text-slate-850 text-center uppercase font-bold"
+                            className="w-16 sm:w-20 px-2.5 py-1.5 border border-slate-200 rounded-xl bg-white focus:ring-1 focus:ring-indigo-500 text-xs text-slate-850 text-center uppercase font-bold"
                           />
+                          <label className={`p-1.5 rounded-lg transition-colors cursor-pointer border ${passenger.ticketFileData ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-slate-50 hover:bg-slate-100 text-slate-400 border-slate-200'}`} title="Anexar Cartão de Embarque">
+                            <input
+                              type="file"
+                              accept="image/*,application/pdf"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onload = () => {
+                                    setEditPassengersList(prev => prev.map((p, idx) => idx === index ? { ...p, ticketFileName: file.name, ticketFileData: reader.result as string } : p));
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
+                              }}
+                            />
+                            <Paperclip className="w-3.5 h-3.5" />
+                          </label>
                           <button
                             type="button"
                             onClick={() => setEditPassengersList(prev => prev.filter((_, idx) => idx !== index))}
-                            className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            className="p-1.5 text-rose-500 hover:bg-rose-50 border border-transparent rounded-lg transition-colors cursor-pointer"
                             title="Remover"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1652,7 +1680,7 @@ export default function OverviewTab({
 
       {/* VIEW BOARDING PASS MODAL */}
       <AnimatePresence>
-        {viewingBoardingPassFlight && (
+        {viewingBoardingPass && (
           <div className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
@@ -1667,16 +1695,16 @@ export default function OverviewTab({
                   </div>
                   <div>
                     <h3 className="font-extrabold text-slate-800 text-sm uppercase tracking-wide">
-                      Cartão de Embarque
+                      Cartão de Embarque {viewingBoardingPass.passenger ? `- ${viewingBoardingPass.passenger.name}` : ''}
                     </h3>
                     <p className="text-[10px] text-slate-450 font-bold uppercase tracking-wider">
-                      {viewingBoardingPassFlight.airline} {viewingBoardingPassFlight.flightCode} | {viewingBoardingPassFlight.departureCode} ➔ {viewingBoardingPassFlight.arrivalCode}
+                      {viewingBoardingPass.flight.airline} {viewingBoardingPass.flight.flightCode} | {viewingBoardingPass.flight.departureCode} ➔ {viewingBoardingPass.flight.arrivalCode}
                     </p>
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setViewingBoardingPassFlight(null)}
+                  onClick={() => setViewingBoardingPass(null)}
                   className="text-slate-400 hover:text-slate-600 text-lg font-black p-1 hover:bg-slate-100 rounded-lg px-2 cursor-pointer"
                 >
                   ✕
@@ -1684,8 +1712,8 @@ export default function OverviewTab({
               </div>
 
               <div className="flex-1 overflow-y-auto min-h-[250px] max-h-[50vh] flex flex-col items-center justify-center bg-slate-50 border border-slate-200/60 rounded-2xl p-4 relative group">
-                {viewingBoardingPassFlight.ticketFileData ? (
-                  viewingBoardingPassFlight.ticketFileData === "(large_preview_hidden_in_local_storage)" ? (
+                {(viewingBoardingPass.passenger?.ticketFileData || viewingBoardingPass.flight.ticketFileData) ? (
+                  (viewingBoardingPass.passenger?.ticketFileData || viewingBoardingPass.flight.ticketFileData) === "(large_preview_hidden_in_local_storage)" ? (
                     <div className="flex flex-col items-center justify-center text-center p-6 space-y-3 animate-fadeIn">
                       <Ticket className="w-12 h-12 text-indigo-500 animate-pulse mb-1" />
                       <p className="font-extrabold text-slate-800 text-sm uppercase tracking-wider">Visualização Otimizada</p>
@@ -1693,21 +1721,21 @@ export default function OverviewTab({
                         Para manter o excelente desempenho do app e respeitar os limites de armazenamento local, este cartão está salvo no servidor e disponível em tempo real.
                       </p>
                       <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-250 tracking-wider">
-                        ANEXO: {viewingBoardingPassFlight.ticketFileName || "arquivo_passagem"}
+                        ANEXO: {(viewingBoardingPass.passenger?.ticketFileName || viewingBoardingPass.flight.ticketFileName) || "arquivo_passagem"}
                       </span>
                     </div>
-                  ) : viewingBoardingPassFlight.ticketFileData.startsWith("data:application/pdf") ? (
+                  ) : (viewingBoardingPass.passenger?.ticketFileData || viewingBoardingPass.flight.ticketFileData)?.startsWith("data:application/pdf") ? (
                     <div className="w-full h-full flex flex-col items-center justify-center space-y-4 animate-fadeIn">
                       <iframe 
-                        src={viewingBoardingPassFlight.ticketFileData} 
+                        src={viewingBoardingPass.passenger?.ticketFileData || viewingBoardingPass.flight.ticketFileData} 
                         className="w-full h-[400px] rounded-xl border border-slate-200 shadow-sm"
-                        title={viewingBoardingPassFlight.ticketFileName || "PDF"} 
+                        title={(viewingBoardingPass.passenger?.ticketFileName || viewingBoardingPass.flight.ticketFileName) || "PDF"} 
                       />
                       <p className="text-slate-400 text-xs italic">Se o PDF não carregar automaticamente na pré-visualização, faça o download utilizando o botão abaixo.</p>
                     </div>
                   ) : (
                     <img
-                      src={viewingBoardingPassFlight.ticketFileData}
+                      src={viewingBoardingPass.passenger?.ticketFileData || viewingBoardingPass.flight.ticketFileData}
                       referrerPolicy="no-referrer"
                       alt="Cartão de Embarque"
                       className="max-w-full max-h-[420px] object-contain rounded-xl shadow-xs animate-fadeIn"
@@ -1744,13 +1772,26 @@ export default function OverviewTab({
                         if (file) {
                           const reader = new FileReader();
                           reader.onload = () => {
-                            const updatedFlight = {
-                              ...viewingBoardingPassFlight,
-                              ticketFileName: file.name,
-                              ticketFileData: reader.result as string
-                            };
+                            let updatedFlight = { ...viewingBoardingPass.flight };
+                            if (viewingBoardingPass.passenger) {
+                              updatedFlight.passengersList = updatedFlight.passengersList?.map(p => 
+                                p.id === viewingBoardingPass.passenger!.id 
+                                  ? { ...p, ticketFileName: file.name, ticketFileData: reader.result as string }
+                                  : p
+                              );
+                              setViewingBoardingPass({ 
+                                flight: updatedFlight, 
+                                passenger: { ...viewingBoardingPass.passenger, ticketFileName: file.name, ticketFileData: reader.result as string } 
+                              });
+                            } else {
+                              updatedFlight = {
+                                ...updatedFlight,
+                                ticketFileName: file.name,
+                                ticketFileData: reader.result as string
+                              };
+                              setViewingBoardingPass({ flight: updatedFlight });
+                            }
                             onUpdateFlight(updatedFlight);
-                            setViewingBoardingPassFlight(updatedFlight);
                           };
                           reader.readAsDataURL(file);
                         }
@@ -1761,10 +1802,10 @@ export default function OverviewTab({
               )}
 
               <div className="flex justify-between items-center pt-3.5 border-t border-slate-100 shrink-0">
-                {viewingBoardingPassFlight.ticketFileData && viewingBoardingPassFlight.ticketFileData !== "(large_preview_hidden_in_local_storage)" ? (
+                {(viewingBoardingPass.passenger?.ticketFileData || viewingBoardingPass.flight.ticketFileData) && (viewingBoardingPass.passenger?.ticketFileData || viewingBoardingPass.flight.ticketFileData) !== "(large_preview_hidden_in_local_storage)" ? (
                   <a
-                    href={viewingBoardingPassFlight.ticketFileData}
-                    download={viewingBoardingPassFlight.ticketFileName || "cartao_de_embarque"}
+                    href={viewingBoardingPass.passenger?.ticketFileData || viewingBoardingPass.flight.ticketFileData}
+                    download={(viewingBoardingPass.passenger?.ticketFileName || viewingBoardingPass.flight.ticketFileName) || "cartao_de_embarque"}
                     className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all border border-indigo-200"
                   >
                     📥 Baixar Arquivo Anexo
@@ -1774,7 +1815,7 @@ export default function OverviewTab({
                 )}
                 <button
                   type="button"
-                  onClick={() => setViewingBoardingPassFlight(null)}
+                  onClick={() => setViewingBoardingPass(null)}
                   className="px-5 py-2 bg-indigo-650 hover:bg-indigo-750 text-white rounded-xl font-bold text-xs transition-colors cursor-pointer shadow-md shadow-indigo-100"
                 >
                   Fechar
@@ -2426,12 +2467,30 @@ export default function OverviewTab({
                               const val = e.target.value;
                               setAddPassengersList(prev => prev.map((p, idx) => idx === index ? { ...p, seat: val } : p));
                             }}
-                            className="w-20 px-2.5 py-1.5 border border-slate-200 rounded-xl bg-white focus:ring-1 focus:ring-indigo-500 text-xs text-slate-850 text-center uppercase font-bold"
+                            className="w-16 sm:w-20 px-2.5 py-1.5 border border-slate-200 rounded-xl bg-white focus:ring-1 focus:ring-indigo-500 text-xs text-slate-850 text-center uppercase font-bold"
                           />
+                          <label className={`p-1.5 rounded-lg transition-colors cursor-pointer border ${passenger.ticketFileData ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : 'bg-slate-50 hover:bg-slate-100 text-slate-400 border-slate-200'}`} title="Anexar Cartão de Embarque">
+                            <input
+                              type="file"
+                              accept="image/*,application/pdf"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onload = () => {
+                                    setAddPassengersList(prev => prev.map((p, idx) => idx === index ? { ...p, ticketFileName: file.name, ticketFileData: reader.result as string } : p));
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
+                              }}
+                            />
+                            <Paperclip className="w-3.5 h-3.5" />
+                          </label>
                           <button
                             type="button"
                             onClick={() => setAddPassengersList(prev => prev.filter((_, idx) => idx !== index))}
-                            className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            className="p-1.5 text-rose-500 hover:bg-rose-50 border border-transparent rounded-lg transition-colors cursor-pointer"
                             title="Remover"
                           >
                             <Trash2 className="w-4 h-4" />

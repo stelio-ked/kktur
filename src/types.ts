@@ -95,6 +95,8 @@ export interface FlightPassenger {
   id: string;
   name: string;
   seat?: string;
+  ticketFileName?: string;
+  ticketFileData?: string;
 }
 
 export interface FlightInfo {
