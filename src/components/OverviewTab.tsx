@@ -24,7 +24,10 @@ import {
   Paperclip,
   Ticket,
   Activity,
-  RefreshCw
+  RefreshCw,
+  X,
+  ZoomIn,
+  ZoomOut
 } from "lucide-react";
 import { Destination, FlightInfo, Traveler, CostItem, FlightPassenger } from "../types";
 import { parseRangeToDates, formatDatesRange, canDeleteEntity } from "../utils";
@@ -147,6 +150,7 @@ export default function OverviewTab({
   const [editTicketFileName, setEditTicketFileName] = useState("");
   const [editTicketFileData, setEditTicketFileData] = useState("");
   const [viewingBoardingPass, setViewingBoardingPass] = useState<{ flight: FlightInfo, passenger?: FlightPassenger } | null>(null);
+  const [zoomScale, setZoomScale] = useState(1);
 
   // Flight Monitoring States
   const [monitoringId, setMonitoringId] = useState<string | null>(null);
@@ -1714,10 +1718,11 @@ export default function OverviewTab({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setViewingBoardingPass(null)}
-                  className="text-slate-400 hover:text-slate-600 text-lg font-black p-1 hover:bg-slate-100 rounded-lg px-2 cursor-pointer"
+                  onClick={() => { setViewingBoardingPass(null); setZoomScale(1); }}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-150 hover:bg-rose-50 hover:text-rose-600 text-slate-600 transition-colors cursor-pointer border border-slate-200"
+                  title="Fechar"
                 >
-                  ✕
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
@@ -1726,7 +1731,7 @@ export default function OverviewTab({
                 <div className="flex flex-wrap gap-1.5 border-b border-slate-100 pb-2.5 overflow-x-auto shrink-0 scrollbar-none">
                   <button
                     type="button"
-                    onClick={() => setViewingBoardingPass({ flight: viewingBoardingPass.flight })}
+                    onClick={() => { setViewingBoardingPass({ flight: viewingBoardingPass.flight }); setZoomScale(1); }}
                     className={`px-3 py-1.5 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer border flex items-center gap-1.5 shrink-0 ${
                       !viewingBoardingPass.passenger
                         ? 'bg-indigo-600 text-white border-indigo-650 shadow-sm shadow-indigo-100/40'
@@ -1746,7 +1751,7 @@ export default function OverviewTab({
                       <button
                         key={p.id}
                         type="button"
-                        onClick={() => setViewingBoardingPass({ flight: viewingBoardingPass.flight, passenger: p })}
+                        onClick={() => { setViewingBoardingPass({ flight: viewingBoardingPass.flight, passenger: p }); setZoomScale(1); }}
                         className={`px-3 py-1.5 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer border flex items-center gap-1.5 shrink-0 ${
                           isSelected
                             ? 'bg-indigo-600 text-white border-indigo-650 shadow-sm shadow-indigo-100/40'
@@ -1766,7 +1771,7 @@ export default function OverviewTab({
                 </div>
               )}
 
-              <div className="flex-1 overflow-y-auto min-h-[250px] max-h-[50vh] flex flex-col items-center justify-center bg-slate-50 border border-slate-200/60 rounded-2xl p-4 relative group">
+              <div className="flex-1 overflow-auto min-h-[250px] max-h-[50vh] flex flex-col items-center justify-center bg-slate-50 border border-slate-200/60 rounded-2xl p-4 relative group">
                 {(viewingBoardingPass.passenger?.ticketFileData || viewingBoardingPass.flight.ticketFileData) ? (
                   (viewingBoardingPass.passenger?.ticketFileData || viewingBoardingPass.flight.ticketFileData) === "(large_preview_hidden_in_local_storage)" ? (
                     <div className="flex flex-col items-center justify-center text-center p-6 space-y-3 animate-fadeIn">
@@ -1789,12 +1794,58 @@ export default function OverviewTab({
                       <p className="text-slate-400 text-xs italic">Se o PDF não carregar automaticamente na pré-visualização, faça o download utilizando o botão abaixo.</p>
                     </div>
                   ) : (
-                    <img
-                      src={viewingBoardingPass.passenger?.ticketFileData || viewingBoardingPass.flight.ticketFileData}
-                      referrerPolicy="no-referrer"
-                      alt="Cartão de Embarque"
-                      className="max-w-full max-h-[420px] object-contain rounded-xl shadow-xs animate-fadeIn"
-                    />
+                    <div className="relative w-full h-full flex items-center justify-center overflow-auto p-1.5">
+                      <div className="transition-all duration-200 ease-out flex items-center justify-center">
+                        <img
+                          src={viewingBoardingPass.passenger?.ticketFileData || viewingBoardingPass.flight.ticketFileData}
+                          referrerPolicy="no-referrer"
+                          alt="Cartão de Embarque"
+                          className="rounded-xl shadow-xs animate-fadeIn transition-all duration-200 object-contain"
+                          style={{
+                            maxHeight: `${380 * zoomScale}px`,
+                            maxWidth: zoomScale > 1 ? "none" : "100%",
+                          }}
+                        />
+                      </div>
+
+                      {/* Floating Zoom Panel */}
+                      <div className="absolute bottom-2 right-2 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-xs p-1.5 rounded-xl shadow-lg border border-slate-700/50 z-10 text-white">
+                        <button
+                          type="button"
+                          disabled={zoomScale <= 0.5}
+                          onClick={() => setZoomScale(prev => Math.max(0.5, prev - 0.25))}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-800 transition-colors border border-slate-700 cursor-pointer"
+                          title="Diminuir Zoom"
+                        >
+                          <ZoomOut className="w-3.5 h-3.5" />
+                        </button>
+                        
+                        <span className="text-[10px] font-black min-w-[34px] text-center font-mono select-none">
+                          {Math.round(zoomScale * 100)}%
+                        </span>
+
+                        <button
+                          type="button"
+                          disabled={zoomScale >= 3.0}
+                          onClick={() => setZoomScale(prev => Math.min(3.0, prev + 0.25))}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-800 transition-colors border border-slate-700 cursor-pointer"
+                          title="Aumentar Zoom"
+                        >
+                          <ZoomIn className="w-3.5 h-3.5" />
+                        </button>
+
+                        {zoomScale !== 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setZoomScale(1)}
+                            className="px-2 h-7 text-[9px] font-black uppercase tracking-wider text-indigo-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors border border-slate-700 cursor-pointer"
+                            title="Resetar Zoom"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   )
                 ) : (
                   <div className="flex flex-col items-center justify-center text-center p-6 animate-fadeIn">
@@ -1880,8 +1931,8 @@ export default function OverviewTab({
                 )}
                 <button
                   type="button"
-                  onClick={() => setViewingBoardingPass(null)}
-                  className="px-5 py-2 bg-indigo-650 hover:bg-indigo-750 text-white rounded-xl font-bold text-xs transition-colors cursor-pointer shadow-md shadow-indigo-100"
+                  onClick={() => { setViewingBoardingPass(null); setZoomScale(1); }}
+                  className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-extrabold text-xs transition-colors cursor-pointer shadow-md shadow-slate-100"
                 >
                   Fechar
                 </button>
