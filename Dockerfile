@@ -20,6 +20,9 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
+# Instala o bash para que o console/terminal funcione corretamente no Cloud Run
+RUN apk add --no-cache bash
+
 ENV NODE_ENV=production
 
 # Copia definições de dependências
