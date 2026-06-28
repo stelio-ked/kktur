@@ -15,6 +15,7 @@ import {
   Car,
   Pencil,
   Trash2,
+  User,
   Users,
   Sparkles,
   UploadCloud,
@@ -1005,7 +1006,7 @@ export default function OverviewTab({
                   <span className="text-slate-400 font-bold text-[10px] uppercase tracking-wider block">Cartão:</span>
                   {flight.ticketFileName ? (
                     <span 
-                      onClick={() => setViewingBoardingPassFlight(flight)}
+                      onClick={() => setViewingBoardingPass({ flight })}
                       className="text-[11px] font-semibold text-indigo-700 truncate max-w-[170px] sm:max-w-[240px] bg-indigo-50/50 hover:bg-indigo-100/60 px-2.5 py-1 rounded-lg border border-indigo-100 cursor-pointer flex items-center gap-1 transition-colors"
                       title={flight.ticketFileName}
                     >
@@ -1047,18 +1048,27 @@ export default function OverviewTab({
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {flight.passengersList.map((passenger, pIdx) => (
-                      <div key={passenger.id || pIdx} className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg pr-1 pl-2.5 py-1 shadow-2xs">
+                      <div key={passenger.id || pIdx} className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg pr-1.5 pl-2.5 py-1 shadow-2xs">
                         <span className="font-bold text-slate-700 text-[11px]">{passenger.name}</span>
                         {passenger.seat && (
                           <span className="text-[9px] uppercase font-black tracking-wider text-indigo-700 bg-indigo-50 border border-indigo-100 px-1 py-0.5 rounded-md leading-none shrink-0">
                             {passenger.seat}
                           </span>
                         )}
-                        {passenger.ticketFileData && (
+                        {!passenger.ticketFileData ? (
                           <button
                             type="button"
                             onClick={() => setViewingBoardingPass({ flight, passenger })}
-                            className="ml-1 p-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-md transition-colors cursor-pointer"
+                            className="ml-1.5 p-1 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 text-slate-400 rounded-md transition-all cursor-pointer border border-slate-150 hover:border-indigo-100"
+                            title="Anexar Cartão de Embarque"
+                          >
+                            <Paperclip className="w-3 h-3" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setViewingBoardingPass({ flight, passenger })}
+                            className="ml-1.5 p-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-md transition-colors cursor-pointer border border-indigo-100"
                             title="Ver Cartão de Embarque"
                           >
                             <Ticket className="w-3 h-3" />
@@ -1711,6 +1721,51 @@ export default function OverviewTab({
                 </button>
               </div>
 
+              {/* Passenger and General Flight Tabs */}
+              {viewingBoardingPass.flight.passengersList && viewingBoardingPass.flight.passengersList.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 border-b border-slate-100 pb-2.5 overflow-x-auto shrink-0 scrollbar-none">
+                  <button
+                    type="button"
+                    onClick={() => setViewingBoardingPass({ flight: viewingBoardingPass.flight })}
+                    className={`px-3 py-1.5 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer border flex items-center gap-1.5 shrink-0 ${
+                      !viewingBoardingPass.passenger
+                        ? 'bg-indigo-600 text-white border-indigo-650 shadow-sm shadow-indigo-100/40'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-500 border-slate-200'
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    Voo Geral
+                    {viewingBoardingPass.flight.ticketFileData && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    )}
+                  </button>
+
+                  {viewingBoardingPass.flight.passengersList.map((p) => {
+                    const isSelected = viewingBoardingPass.passenger?.id === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setViewingBoardingPass({ flight: viewingBoardingPass.flight, passenger: p })}
+                        className={`px-3 py-1.5 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer border flex items-center gap-1.5 shrink-0 ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white border-indigo-650 shadow-sm shadow-indigo-100/40'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-500 border-slate-200'
+                        }`}
+                      >
+                        <User className="w-3.5 h-3.5" />
+                        {p.name || "Passageiro"}
+                        {p.ticketFileData ? (
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        ) : (
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-450" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               <div className="flex-1 overflow-y-auto min-h-[250px] max-h-[50vh] flex flex-col items-center justify-center bg-slate-50 border border-slate-200/60 rounded-2xl p-4 relative group">
                 {(viewingBoardingPass.passenger?.ticketFileData || viewingBoardingPass.flight.ticketFileData) ? (
                   (viewingBoardingPass.passenger?.ticketFileData || viewingBoardingPass.flight.ticketFileData) === "(large_preview_hidden_in_local_storage)" ? (
@@ -1743,9 +1798,19 @@ export default function OverviewTab({
                   )
                 ) : (
                   <div className="flex flex-col items-center justify-center text-center p-6 animate-fadeIn">
-                    <Ticket className="w-12 h-12 text-slate-350 stroke-1 mb-2" />
-                    <p className="text-slate-600 font-bold text-sm">Arquivo ausente ou inválido</p>
-                    <p className="text-slate-400 text-xs mt-1">Insira novamente o anexo editando o trecho do voo.</p>
+                    <UploadCloud className="w-12 h-12 text-slate-350 stroke-1 mb-2 animate-bounce" />
+                    <p className="text-slate-700 font-extrabold text-xs uppercase tracking-wider">
+                      {viewingBoardingPass.passenger 
+                        ? `Sem cartão para ${viewingBoardingPass.passenger.name}`
+                        : "Arquivo ausente ou inválido"
+                      }
+                    </p>
+                    <p className="text-slate-450 text-[11px] mt-1 max-w-xs">
+                      {viewingBoardingPass.passenger
+                        ? "Utilize o botão de upload abaixo para anexar e vincular o cartão de embarque deste passageiro diretamente."
+                        : "Insira novamente o anexo editando o trecho do voo."
+                      }
+                    </p>
                   </div>
                 )}
               </div>

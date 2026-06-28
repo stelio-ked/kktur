@@ -613,6 +613,7 @@ export default function CostsTab({
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
+                      isAnimationActive={false}
                       data={chartData.map(d => ({ ...d, fill: d.color }))}
                       cx="50%"
                       cy="50%"
@@ -621,7 +622,7 @@ export default function CostsTab({
                       paddingAngle={3}
                       dataKey="value"
                     />
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip isAnimationActive={false} content={<CustomTooltip />} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute text-center select-none pointer-events-none">
@@ -699,7 +700,7 @@ export default function CostsTab({
                       axisLine={false}
                       tickFormatter={(val) => `R$ ${val}`}
                     />
-                    <Tooltip content={<CustomBarTooltip />} cursor={{ fill: '#F8FAFC' }} />
+                    <Tooltip isAnimationActive={false} content={<CustomBarTooltip />} cursor={{ fill: '#F8FAFC' }} />
                     <Legend 
                       verticalAlign="top" 
                       height={32}
@@ -707,9 +708,9 @@ export default function CostsTab({
                       iconSize={8}
                       formatter={(value) => <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{value}</span>}
                     />
-                    <Bar dataKey="Pago" stackId="a" fill="#10B981" radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="Pgto no Local" stackId="a" fill="#F59E0B" radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="Falta Pagar" stackId="a" fill="#EF4444" radius={[6, 6, 0, 0]} />
+                    <Bar isAnimationActive={false} dataKey="Pago" stackId="a" fill="#10B981" radius={[0, 0, 0, 0]} />
+                    <Bar isAnimationActive={false} dataKey="Pgto no Local" stackId="a" fill="#F59E0B" radius={[0, 0, 0, 0]} />
+                    <Bar isAnimationActive={false} dataKey="Falta Pagar" stackId="a" fill="#EF4444" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
