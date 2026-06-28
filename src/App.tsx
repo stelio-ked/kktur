@@ -653,8 +653,18 @@ export default function App() {
             }
           }
         }
-      } catch (err) {
-        console.error("Background error reading group messages:", err);
+      } catch (err: any) {
+        const isNetworkError = err?.message && (
+          err.message.includes("Failed to fetch") || 
+          err.message.includes("network error") || 
+          err.message.includes("NetworkError") || 
+          err.message.includes("abort")
+        );
+        if (isNetworkError) {
+          console.warn("Background chat poll temporarily unavailable (transient network/server restart):", err.message);
+        } else {
+          console.error("Background error reading group messages:", err);
+        }
       }
     };
 
@@ -2099,8 +2109,18 @@ export default function App() {
             data: payload
           })
         });
-      } catch (e) {
-        console.error("Autosave target error:", e);
+      } catch (e: any) {
+        const isNetworkError = e?.message && (
+          e.message.includes("Failed to fetch") || 
+          e.message.includes("network error") || 
+          e.message.includes("NetworkError") || 
+          e.message.includes("abort")
+        );
+        if (isNetworkError) {
+          console.warn("Autosave temporarily unavailable (transient network/server restart):", e.message);
+        } else {
+          console.error("Autosave target error:", e);
+        }
       }
     }, 5000);
 

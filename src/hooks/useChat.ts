@@ -61,8 +61,18 @@ export function useChat(itineraryId: string | number, currentUserName?: string) 
         const errData = await res.json().catch(() => ({}));
         console.error("fetchMessages failed:", res.status, errData);
       }
-    } catch (e) {
-      console.error("fetchMessages error:", e);
+    } catch (e: any) {
+      const isNetworkError = e?.message && (
+        e.message.includes("Failed to fetch") || 
+        e.message.includes("network error") || 
+        e.message.includes("NetworkError") || 
+        e.message.includes("abort")
+      );
+      if (isNetworkError) {
+        console.warn("fetchMessages temporarily unavailable (transient network/server restart):", e.message);
+      } else {
+        console.error("fetchMessages error:", e);
+      }
     }
   }, [itineraryId, currentUserName]);
 
