@@ -561,6 +561,16 @@ export default function App() {
             const isInitial = !lastCheckedChatTimestampRef.current;
             lastCheckedChatTimestampRef.current = data[data.length - 1].timestamp;
 
+            // Se for o carregamento inicial, marcar todas as mensagens existentes como já notificadas
+            // para que nunca disparem pop-ups indesejados ao recarregar a página ou mudar de aba.
+            if (isInitial) {
+              data.forEach((msg: any) => {
+                if (msg.id) {
+                  notifiedMessageIdsRef.current.add(msg.id);
+                }
+              });
+            }
+
             // Handle unreadCount calculation
             if (activeTab === "chat") {
               localStorage.setItem(`last_read_chat_timestamp_${activeItineraryId}`, data[data.length - 1].timestamp);
