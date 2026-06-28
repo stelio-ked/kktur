@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { CostItem, Traveler, CostCategory } from "../types";
 import { motion, AnimatePresence } from "motion/react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
+import { PieChart, Pie, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 
 import CostCategoriesModal from "./CostCategoriesModal";
 import MapsSelectorModal from "./MapsSelectorModal";
@@ -613,18 +613,14 @@ export default function CostsTab({
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={chartData}
+                      data={chartData.map(d => ({ ...d, fill: d.color }))}
                       cx="50%"
                       cy="50%"
                       innerRadius={50}
                       outerRadius={68}
                       paddingAngle={3}
                       dataKey="value"
-                    >
-                      {chartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
+                    />
                     <Tooltip content={<CustomTooltip />} />
                   </PieChart>
                 </ResponsiveContainer>
