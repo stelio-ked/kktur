@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Instala todas as dependências (incluindo devDependencies necessárias para compilar)
-RUN npm install --no-audit --no-fund
+RUN npm install --no-audit --no-fund --legacy-peer-deps
 
 # Copia o restante do código-fonte
 COPY . .
@@ -26,7 +26,7 @@ ENV NODE_ENV=production
 COPY package*.json ./
 
 # Instala apenas as dependências de produção para manter a imagem limpa e rápida
-RUN npm install --omit=dev --no-audit --no-fund
+RUN npm install --omit=dev --no-audit --no-fund --legacy-peer-deps
 
 # Copia os arquivos compilados do estágio anterior
 COPY --from=builder /app/dist ./dist
