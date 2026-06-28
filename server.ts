@@ -346,10 +346,12 @@ async function saveItineraryData(
       if (f.passengersList && Array.isArray(f.passengersList)) {
         f.passengersList.forEach((pass: any) => {
           let fileData = pass.ticketFileData || null;
-          if (fileData && fileData.length > 5000000) { 
-            // Avoid saving very large base64 strings directly in local storage placeholder 
-            // Currently this is stored in Postgres, so it's fine, but if we need a placeholder...
-            // actually we want to store it in DB!
+          if (fileData === "(large_preview_hidden_in_local_storage)") {
+            const existingFlight = existingFlights.find((ef: any) => p(ef.id, 'f') === p(f.id, 'f'));
+            const existingPassenger = existingFlight?.passengersList?.find((ep: any) => p(ep.id, 'fp') === p(pass.id, 'fp'));
+            if (existingPassenger && existingPassenger.ticketFileData && existingPassenger.ticketFileData !== "(large_preview_hidden_in_local_storage)") {
+              fileData = existingPassenger.ticketFileData;
+            }
           }
           passengersToInsert.push({
             id: p(pass.id, 'fp'),
@@ -357,7 +359,7 @@ async function saveItineraryData(
             name: pass.name || '',
             seat: pass.seat || '',
             ticketFileName: pass.ticketFileName || null,
-            ticketFileData: pass.ticketFileData || null,
+            ticketFileData: fileData,
           });
         });
       }
@@ -1177,7 +1179,10 @@ async function startServer() {
         let existingActivities: any[] = [];
 
         try {
-          existingFlights = await tx.select().from(flights).where(eq(flights.itineraryId, itineraryId));
+          existingFlights = await tx.query.flights.findMany({
+            where: eq(flights.itineraryId, itineraryId),
+            with: { passengersList: true }
+          });
           existingDocuments = await tx.select().from(documents).where(eq(documents.itineraryId, itineraryId));
           existingCosts = await tx.select().from(costs).where(eq(costs.itineraryId, itineraryId));
           const existingDestinations = await tx.select().from(destinations).where(eq(destinations.itineraryId, itineraryId));

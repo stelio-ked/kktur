@@ -2590,7 +2590,7 @@ export default function App() {
       </footer>
 
       {showTravelerPasswordPrompt && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
           <div className="bg-white rounded-3xl p-6 md:p-8 max-w-sm w-full shadow-2xl text-center space-y-5 animate-slideUp">
             <div className="mx-auto w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center">
               <Key className="w-8 h-8" />
@@ -2675,7 +2675,7 @@ export default function App() {
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* Floating In-App Chat Toast Push Banners Overlay */}
