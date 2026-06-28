@@ -26,7 +26,7 @@ ENV NODE_ENV=production
 COPY package*.json ./
 
 # Instala apenas as dependências de produção para manter a imagem limpa e rápida
-RUN npm install --only=production --no-audit --no-fund
+RUN npm install --omit=dev --no-audit --no-fund
 
 # Copia os arquivos compilados do estágio anterior
 COPY --from=builder /app/dist ./dist
