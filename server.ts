@@ -3,7 +3,6 @@ dns.setDefaultResultOrder("ipv4first");
 
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import { db } from "./src/db/index.js";
 import {
   users, itineraries, travelers, destinations, itineraryDays, activities,
@@ -2221,6 +2220,7 @@ Não adicione qualquer texto introdutório ou explicativo. Responda apenas com a
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
