@@ -1326,6 +1326,32 @@ async function startServer() {
           console.error("Erro ao recuperar registros existentes para preservar arquivos:", fetchErr);
         }
 
+        // Deletar explicitamente registros das tabelas filhas para garantir integridade e evitar conflitos de ID
+        try {
+          const existingDestinations = await tx.select().from(destinations).where(eq(destinations.itineraryId, itineraryId));
+          const existingDestIds = existingDestinations.map((d: any) => d.id);
+          if (existingDestIds.length > 0) {
+            const existingDays = await tx.select().from(itineraryDays).where(inArray(itineraryDays.destinationId, existingDestIds));
+            const existingDayIds = existingDays.map((dy: any) => dy.id);
+            if (existingDayIds.length > 0) {
+              await tx.delete(activities).where(inArray(activities.dayId, existingDayIds));
+            }
+            await tx.delete(itineraryDays).where(inArray(itineraryDays.destinationId, existingDestIds));
+          }
+        } catch (err) {
+          console.error("Erro ao deletar de forma explicita dias e atividades:", err);
+        }
+
+        try {
+          const existingFlightsForDelete = await tx.select().from(flights).where(eq(flights.itineraryId, itineraryId));
+          const existingFlightIds = existingFlightsForDelete.map((f: any) => f.id);
+          if (existingFlightIds.length > 0) {
+            await tx.delete(flightPassengers).where(inArray(flightPassengers.flightId, existingFlightIds));
+          }
+        } catch (err) {
+          console.error("Erro ao deletar de forma explicita passageiros de voo:", err);
+        }
+
         await tx.delete(travelers).where(eq(travelers.itineraryId, itineraryId));
         await tx.delete(destinations).where(eq(destinations.itineraryId, itineraryId));
         await tx.delete(costs).where(eq(costs.itineraryId, itineraryId));
