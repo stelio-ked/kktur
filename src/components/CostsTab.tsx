@@ -24,7 +24,7 @@ import { PieChart, Pie, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxi
 
 import CostCategoriesModal from "./CostCategoriesModal";
 import MapsSelectorModal from "./MapsSelectorModal";
-import { canDeleteEntity } from "../utils";
+import { canDeleteEntity, formatCostDate } from "../utils";
 
 interface CostsTabProps {
   costs: CostItem[];
@@ -1048,11 +1048,10 @@ export default function CostsTab({
               <div>
                 <label className="text-[10px] font-bold text-slate-400 block mb-0.5 uppercase">Período / Data Estadia</label>
                 <input 
-                  type="text" 
-                  placeholder="e.g. 01 jul. - 04 jul." 
+                  type="date" 
                   value={newDates}
                   onChange={(e) => setNewDates(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-slate-700"
                 />
               </div>
 
@@ -1172,7 +1171,7 @@ export default function CostsTab({
                       )}
                     </div>
                   </td>
-                  <td className="py-3 px-3 text-slate-500 font-semibold">{item.dateRange || "—"}</td>
+                  <td className="py-3 px-3 text-slate-500 font-semibold">{formatCostDate(item.dateRange)}</td>
                   <td className="py-3 px-3 text-slate-500 max-w-[150px] truncate" title={item.notes}>
                     {item.notes || "—"}
                   </td>
@@ -1526,11 +1525,10 @@ export default function CostsTab({
                   <div>
                     <label className="text-[10px] font-extrabold text-slate-400 block mb-0.5 uppercase tracking-wider">Período / Data Estadia</label>
                     <input
-                      type="text"
-                      placeholder="e.g. 01 jul. - 04 jul."
+                      type="date"
                       value={editDates}
                       onChange={(e) => setEditDates(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white focus:outline-hidden font-medium"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white focus:outline-hidden font-medium text-slate-700"
                     />
                   </div>
                 </div>

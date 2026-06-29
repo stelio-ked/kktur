@@ -17,6 +17,7 @@ import {
 import { Traveler, Destination, CostItem } from "../types";
 import { jsPDF } from "jspdf";
 import SettingsPassword from "./SettingsPassword";
+import { formatCostDate } from "../utils";
 
 interface AccessLog {
   id: number;
@@ -437,7 +438,7 @@ export default function SettingsTab({
             // DateRange / Period
             doc.setFontSize(7.5);
             doc.setTextColor(100, 116, 139);
-            doc.text(cost.dateRange || "—", 115, y + 1.5);
+            doc.text(formatCostDate(cost.dateRange), 115, y + 1.5);
 
             // Status colors
             doc.setFont("helvetica", "bold");

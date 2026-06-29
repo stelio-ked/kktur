@@ -475,3 +475,27 @@ export function canDeleteEntity(
   // 3. All other roles do not have permission to delete anything
   return false;
 }
+
+/**
+ * Formats a dateRange string into a friendly Portuguese display.
+ * If the string matches YYYY-MM-DD, formats to "DD de [Mês] de YYYY" (e.g. "29 de Junho de 2026").
+ * Otherwise, returns the string as is (for legacy ranges like "30 jun. - 01 jul.").
+ */
+export function formatCostDate(dateStr: string | undefined | null): string {
+  if (!dateStr) return "—";
+  const trimmed = dateStr.trim();
+  const matchDash = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (matchDash) {
+    const year = parseInt(matchDash[1], 10);
+    const month = parseInt(matchDash[2], 10);
+    const day = parseInt(matchDash[3], 10);
+    
+    const months = [
+      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    ];
+    const monthStr = months[month - 1] || "";
+    return `${day} de ${monthStr} de ${year}`;
+  }
+  return dateStr;
+}

@@ -24,7 +24,7 @@ import {
 import { TravelDocument, Destination, CostItem, Traveler } from "../types";
 import { motion, AnimatePresence } from "motion/react";
 import { jsPDF } from "jspdf";
-import { canDeleteEntity } from "../utils";
+import { canDeleteEntity, formatCostDate } from "../utils";
 
 interface DocumentsTabProps {
   documents: TravelDocument[];
@@ -524,7 +524,7 @@ export default function DocumentsTab({
             // DateRange / Period
             doc.setFontSize(7.5);
             doc.setTextColor(100, 116, 139);
-            doc.text(cost.dateRange || "—", 115, y + 1.5);
+            doc.text(formatCostDate(cost.dateRange), 115, y + 1.5);
 
             // Status colors
             doc.setFont("helvetica", "bold");
