@@ -6,6 +6,8 @@ import {
   Plane, 
   Calendar, 
   ChevronRight, 
+  ChevronDown,
+  ChevronUp,
   Plus, 
   DollarSign, 
   ExternalLink,
@@ -288,7 +290,8 @@ export default function OverviewTab({
   const [addDuration, setAddDuration] = useState("");
   const [addDateStr, setAddDateStr] = useState("");
   const [addArrivalDateStr, setAddArrivalDateStr] = useState("");
-  const [addStatus, setAddStatus] = useState<"Confirmado" | "Atrasado" | "Em voo" | "Cancelado">("Confirmado");
+  const [addStatus, setAddStatus] = useState<FlightInfo["status"]>("Confirmado");
+  const [expandedFlightIds, setExpandedFlightIds] = useState<Record<string, boolean>>({});
   const [addGate, setAddGate] = useState("");
   const [addLocator, setAddLocator] = useState("");
   const [addPassengersList, setAddPassengersList] = useState<FlightPassenger[]>([]);
@@ -899,12 +902,58 @@ export default function OverviewTab({
                 </div>
               );
             }
+
+            const isCollapsed = flight.status === "Finalizado" && !expandedFlightIds[flight.id];
+            if (isCollapsed) {
+              return (
+                <div 
+                  key={flight.id} 
+                  onClick={() => setExpandedFlightIds(prev => ({ ...prev, [flight.id]: true }))}
+                  className="bg-slate-50/70 hover:bg-slate-100/90 p-3.5 rounded-2xl border border-slate-200/50 transition-all cursor-pointer flex items-center justify-between shadow-3xs animate-fadeIn"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-slate-200/60 flex items-center justify-center text-slate-450 shrink-0">
+                      <Plane className="w-4 h-4 transform rotate-45" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-slate-700 leading-tight flex items-center gap-1.5 flex-wrap">
+                        <span>{flight.departureCode}</span>
+                        <span className="text-slate-400 font-medium">→</span>
+                        <span>{flight.arrivalCode}</span>
+                        <span className="text-slate-300 font-normal">|</span>
+                        <span className="text-[10px] font-extrabold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md leading-none">{flight.airline} • {flight.flightCode}</span>
+                      </p>
+                      <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                        {formatFlightDate(flight.dateStr)} • {flight.departureTime}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[9px] font-black uppercase text-slate-550 bg-slate-200/65 px-2 py-0.5 rounded-md">
+                      {flight.status}
+                    </span>
+                    <ChevronDown className="w-4 h-4 text-slate-400" />
+                  </div>
+                </div>
+              );
+            }
+
             return (
               <div key={flight.id} className="bg-slate-50/90 p-4 sm:p-5 rounded-2xl border border-slate-200/60 space-y-3 shadow-2xs animate-fadeIn">
               <div className="flex items-center justify-between text-[11px] sm:text-xs font-bold text-slate-400">
                 <span className="uppercase tracking-wider">Roteiro de Voo</span>
                 <div className="flex items-center gap-1.5">
                   <span className="text-indigo-650 font-extrabold bg-indigo-50 border border-indigo-150 px-2.5 py-0.5 rounded-lg text-[10px] sm:text-xs">{flight.airline} • {flight.flightCode}</span>
+                  {flight.status === "Finalizado" && (
+                    <button
+                      type="button"
+                      onClick={() => setExpandedFlightIds(prev => ({ ...prev, [flight.id]: false }))}
+                      className="p-1 text-slate-400 hover:text-indigo-650 hover:bg-slate-200/50 rounded-lg transition-colors cursor-pointer flex items-center justify-center"
+                      title="Minimizar Voo"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   {!isReadOnly && (
                     <button
                       type="button"
@@ -1545,6 +1594,7 @@ export default function OverviewTab({
                       <option value="Atrasado">Atrasado</option>
                       <option value="Em voo">Em voo</option>
                       <option value="Cancelado">Cancelado</option>
+                      <option value="Finalizado">Finalizado</option>
                     </select>
                   </div>
                 </div>
@@ -2493,6 +2543,7 @@ export default function OverviewTab({
                       <option value="Atrasado">Atrasado</option>
                       <option value="Em voo">Em voo</option>
                       <option value="Cancelado">Cancelado</option>
+                      <option value="Finalizado">Finalizado</option>
                     </select>
                   </div>
                 </div>
