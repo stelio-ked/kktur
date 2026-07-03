@@ -171,6 +171,7 @@ export default function ItineraryTab({
   const activeDestination = destinations.find((d) => d.id === selectedDestinationId) || destinations[0];
   const [activeDayIdx, setActiveDayIdx] = useState<number>(0);
   const [timelineMode, setTimelineMode] = useState<"selected" | "all">("selected");
+  const [visitedFilter, setVisitedFilter] = useState<"all" | "not_visited" | "visited">("all");
   const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[]>([]);
 
   const userEmailNormalized = currentUser?.email?.toLowerCase().trim() || "";
@@ -1378,8 +1379,8 @@ export default function ItineraryTab({
               </div>
             )}
 
-            {/* General Trip Info / Hotel Quick Card */}
-            {(() => {
+            {/* General Trip Info / Hotel Quick Card - HIDDEN AS REQUESTED */}
+            {false && (() => {
               const connectedCost = costs.find(
                 (c) => c.category === "hotel" && (c.destinationId === activeDestination?.id || (activeDestination && c.description.toLowerCase().includes(activeDestination.city.toLowerCase())))
               );
@@ -1536,13 +1537,13 @@ export default function ItineraryTab({
               </div>
             )}
 
-            {/* Weather Widget */}
-            {activeDay && activeDestination && (
+            {/* Weather Widget - HIDDEN AS REQUESTED */}
+            {false && activeDay && activeDestination && (
               <WeatherWidget destination={activeDestination} activeDay={activeDay} />
             )}
 
-            {/* Interactive Timeline Map */}
-            {activeDay && activeDestination && (
+            {/* Interactive Timeline Map - HIDDEN AS REQUESTED */}
+            {false && activeDay && activeDestination && (
               <ItineraryMap 
                 destination={activeDestination} 
                 dayActivities={activeDay.activities} 
@@ -1785,31 +1786,72 @@ export default function ItineraryTab({
 
             {/* Timeline View Filter Segmented Control */}
             {activeDestination && (
-              <div className="flex items-center justify-between bg-slate-50 border border-slate-205 p-1 rounded-2xl max-w-md mx-auto sm:ml-0 mt-2">
-                <button
-                  type="button"
-                  onClick={() => setTimelineMode("selected")}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-black rounded-xl transition-all cursor-pointer ${
-                    timelineMode === "selected"
-                      ? "bg-white text-indigo-700 shadow-sm border border-slate-200"
-                      : "text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  <Calendar className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
-                  Conforme Selecionado
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTimelineMode("all")}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-black rounded-xl transition-all cursor-pointer ${
-                    timelineMode === "all"
-                      ? "bg-white text-indigo-700 shadow-sm border border-slate-200"
-                      : "text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5 shrink-0 text-amber-500 animate-pulse" />
-                  Roteiro Inteiro ({activeDestination.days.length} Dias)
-                </button>
+              <div className="space-y-3 mt-2 max-w-md mx-auto sm:ml-0">
+                <div className="flex items-center justify-between bg-slate-50 border border-slate-205 p-1 rounded-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setTimelineMode("selected")}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-black rounded-xl transition-all cursor-pointer ${
+                      timelineMode === "selected"
+                        ? "bg-white text-indigo-700 shadow-sm border border-slate-200"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    <Calendar className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
+                    Conforme Selecionado
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTimelineMode("all")}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-black rounded-xl transition-all cursor-pointer ${
+                      timelineMode === "all"
+                        ? "bg-white text-indigo-700 shadow-sm border border-slate-200"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 shrink-0 text-amber-500 animate-pulse" />
+                    Roteiro Inteiro ({activeDestination.days.length} Dias)
+                  </button>
+                </div>
+
+                {/* Single-selection filter for visited / non-visited spots */}
+                <div className="flex items-center justify-between bg-slate-100/60 border border-slate-200/85 p-1 rounded-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setVisitedFilter("all")}
+                    className={`flex-1 py-1 px-2.5 text-[11px] font-black rounded-xl transition-all cursor-pointer text-center ${
+                      visitedFilter === "all"
+                        ? "bg-white text-indigo-700 shadow-3xs border border-slate-200/50"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    Todos Pontos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVisitedFilter("not_visited")}
+                    className={`flex-1 py-1 px-2.5 text-[11px] font-black rounded-xl transition-all cursor-pointer text-center ${
+                      visitedFilter === "not_visited"
+                        ? "bg-white text-emerald-700 shadow-3xs border border-slate-200/50"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                    title="Pontos não visitados ainda"
+                  >
+                    Não Visitados
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVisitedFilter("visited")}
+                    className={`flex-1 py-1 px-2.5 text-[11px] font-black rounded-xl transition-all cursor-pointer text-center ${
+                      visitedFilter === "visited"
+                        ? "bg-white text-indigo-950 shadow-3xs border border-slate-200/50"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                    title="Pontos já visitados"
+                  >
+                    Visitados
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1821,8 +1863,21 @@ export default function ItineraryTab({
                   <div className="p-8 text-center text-slate-400">
                     Nenhuma atividade cadastrada. Personalize adicionando acima.
                   </div>
-                ) : (
-                  sortActivitiesByTime(activeDay.activities).map((act) => {
+                ) : ( (() => {
+                  const filtered = sortActivitiesByTime(activeDay.activities).filter((act) => {
+                    const isVisited = isActivityCheckedByActiveTraveler(act.id);
+                    if (visitedFilter === "visited") return isVisited;
+                    if (visitedFilter === "not_visited") return !isVisited;
+                    return true;
+                  });
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="p-8 text-center text-slate-400">
+                        Nenhuma atividade {visitedFilter === "visited" ? "visitada" : "não visitada"} cadastrada para este dia.
+                      </div>
+                    );
+                  }
+                  return filtered.map((act) => {
                     const actInfo = getActivityInfo(act);
                     const TypeIcon = actInfo.icon;
                     return (
@@ -1992,17 +2047,40 @@ export default function ItineraryTab({
                       </div>
                     );
                   })
-                )
-              ) : (
+                })()
+              )
+            ) : (
                 /* All Days holistic sequential timeline */
                 !activeDestination || !activeDestination.days.some(d => d.activities.length > 0) ? (
                   <div className="p-8 text-center text-slate-400">
                     Nenhuma atividade cadastrada em nenhum dia do roteiro. Personalize escolhendo um dia no menu esquerdo e adicione atrações!
                   </div>
-                ) : (
-                  activeDestination.days.map((day) => {
+                ) : ( (() => {
+                  const hasAnyMatching = activeDestination.days.some(day => 
+                    day.activities.some(act => {
+                      const isVisited = isActivityCheckedByActiveTraveler(act.id);
+                      if (visitedFilter === "visited") return isVisited;
+                      if (visitedFilter === "not_visited") return !isVisited;
+                      return true;
+                    })
+                  );
+                  if (!hasAnyMatching) {
+                    return (
+                      <div className="p-8 text-center text-slate-400">
+                        Nenhuma atividade {visitedFilter === "visited" ? "visitada" : "não visitada"} cadastrada no roteiro inteiro.
+                      </div>
+                    );
+                  }
+                  return activeDestination.days.map((day) => {
                     const sortedActs = sortActivitiesByTime(day.activities);
                     if (sortedActs.length === 0) return null;
+                    const filteredActs = sortedActs.filter((act) => {
+                      const isVisited = isActivityCheckedByActiveTraveler(act.id);
+                      if (visitedFilter === "visited") return isVisited;
+                      if (visitedFilter === "not_visited") return !isVisited;
+                      return true;
+                    });
+                    if (filteredActs.length === 0) return null;
                     return (
                       <div key={day.id} className="space-y-4">
                         {/* Floating Day Header in Timeline */}
@@ -2018,7 +2096,7 @@ export default function ItineraryTab({
                           </div>
                         </div>
 
-                        {sortedActs.map((act) => {
+                        {filteredActs.map((act) => {
                           const actInfo = getActivityInfo(act);
                           const TypeIcon = actInfo.icon;
                           return (
@@ -2191,8 +2269,9 @@ export default function ItineraryTab({
                       </div>
                     );
                   })
-                )
-              )}
+                })()
+              )
+            )}
             </div>
 
           </div>
