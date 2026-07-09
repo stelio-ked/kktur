@@ -12,9 +12,11 @@ export const createPool = () => {
     );
     return null;
   }
+  const hasLocalhost = process.env.DATABASE_URL.includes("localhost") || process.env.DATABASE_URL.includes("127.0.0.1");
   return new Pool({
     connectionString: process.env.DATABASE_URL,
     connectionTimeoutMillis: 15000,
+    ssl: hasLocalhost ? false : { rejectUnauthorized: false }
   });
 };
 
