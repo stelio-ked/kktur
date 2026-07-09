@@ -208,6 +208,12 @@ export default function ItineraryTab({
     return checkedList.includes(actId);
   };
 
+  const isDestinationVisited = (dest: Destination) => {
+    const allActivities = dest.days.flatMap((day) => day.activities);
+    if (allActivities.length === 0) return false;
+    return allActivities.every((act) => isActivityCheckedByActiveTraveler(act.id));
+  };
+
   const handleToggleActivityVisited = (travelerId: string, activityId: string) => {
     if (!onUpdateTravelerChecklists) return;
     const traveler = activeTravelersList.find(t => t.id === travelerId);
@@ -839,23 +845,28 @@ export default function ItineraryTab({
       <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex flex-col gap-3">
         <div className="flex overflow-x-auto w-full scrollbar-none gap-2 items-center pb-1">
           <span className="text-xs font-extrabold text-slate-400 uppercase tracking-widest mr-2 shrink-0">Cidades:</span>
-          {destinations.map((dest) => (
-            <button
-              key={dest.id}
-              onClick={() => {
-                setSelectedDestinationId(dest.id);
-                setActiveDayIdx(0);
-                setShowAddActivityForm(false);
-              }}
-              className={`px-4 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer border whitespace-nowrap shrink-0 ${
-                activeDestination?.id === dest.id
-                  ? "bg-indigo-600 text-white border-indigo-650"
-                  : "bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-205"
-              }`}
-            >
-              {dest.city}
-            </button>
-          ))}
+          {destinations.map((dest) => {
+            const visited = isDestinationVisited(dest);
+            return (
+              <button
+                key={dest.id}
+                onClick={() => {
+                  setSelectedDestinationId(dest.id);
+                  setActiveDayIdx(0);
+                  setShowAddActivityForm(false);
+                }}
+                className={`px-4 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer border whitespace-nowrap shrink-0 flex items-center gap-1 ${
+                  activeDestination?.id === dest.id
+                    ? "bg-indigo-600 text-white border-indigo-650"
+                    : "bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-205"
+                } ${visited ? "line-through decoration-slate-400 opacity-80" : ""}`}
+                title={visited ? `${dest.city} (Totalmente visitada!)` : dest.city}
+              >
+                <span>{dest.city}</span>
+                {visited && <span className="text-[10px] shrink-0">✅</span>}
+              </button>
+            );
+          })}
           
           {onAddDestination && !isReadOnly && (
             <button
