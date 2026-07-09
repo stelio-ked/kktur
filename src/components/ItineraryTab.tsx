@@ -138,6 +138,7 @@ interface ItineraryTabProps {
   onUpdateTravelerChecklists?: (travelerId: string, checkedActivities: string, packingItems: string) => void;
   currentUser?: any;
   onOptimizeDayRoute?: (destId: string, dayId: string) => Promise<void>;
+  onSyncAllDefaultDestinations?: () => void;
   itineraryId?: string | number | null;
 }
 
@@ -151,6 +152,7 @@ export default function ItineraryTab({
   selectedDestinationId,
   setSelectedDestinationId,
   onSyncWashington,
+  onSyncAllDefaultDestinations,
   onImportDestinationDays,
   onUpdateHotelAndCost,
   onAddTip,
@@ -936,6 +938,17 @@ export default function ItineraryTab({
             >
               <RotateCcw className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               Restaurar Padrão
+            </button>
+          )}
+
+          {onSyncAllDefaultDestinations && !isReadOnly && (
+            <button
+              id="btn-sync-all-default"
+              onClick={onSyncAllDefaultDestinations}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white border-emerald-600 hover:shadow-md text-xs font-extrabold rounded-xl transition-all cursor-pointer border shrink-0 whitespace-nowrap"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-emerald-200 shrink-0" />
+              Restaurar Cidades Padrão
             </button>
           )}
 

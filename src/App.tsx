@@ -155,6 +155,11 @@ export default function App() {
     return localStorage.getItem("auth_traveler_email");
   });
   const [isFetchingCloud, setIsFetchingCloud] = useState<boolean>(false);
+  const [hasLoadedCloud, setHasLoadedCloud] = useState<boolean>(() => {
+    const isOfflineMode = localStorage.getItem("meu_agente_offline_mode") === "true";
+    return !localStorage.getItem("auth_token") || isOfflineMode;
+  });
+  
   const lastValidatedEmailRef = useRef<string | null>(null);
   
   const [showTravelerPasswordPrompt, setShowTravelerPasswordPrompt] = useState(false);
@@ -316,6 +321,15 @@ export default function App() {
     const saved = localStorage.getItem("meu_agente_offline_mode");
     return saved ? JSON.parse(saved) : false;
   });
+
+  useEffect(() => {
+    const isOfflineMode = localStorage.getItem("meu_agente_offline_mode") === "true";
+    if (token && !isOfflineMode) {
+      setHasLoadedCloud(false);
+    } else {
+      setHasLoadedCloud(true);
+    }
+  }, [token, isOffline]);
 
   // --- ITINERARIES / VIAGENS MANAGEMENT ---
   const [itineraries, setItineraries] = useState<{ id: string | number; title: string; data?: any; ecoMode?: boolean }[]>(() => {
@@ -806,10 +820,12 @@ export default function App() {
             localStorage.removeItem("meu_agente_active_itinerary_id");
           }
         }
+        setHasLoadedCloud(true);
       } catch (err) {
         console.error("Erro ao puxar dados da nuvem:", err);
       } finally {
         setIsFetchingCloud(false);
+        setHasLoadedCloud(true);
       }
     };
     
@@ -1275,6 +1291,24 @@ export default function App() {
       id: `alert-sync-${Date.now()}`,
       title: "Planilha Sincronizada",
       description: "As atividades originais da planilha de Washington foram restauradas no Diário de Bordo!",
+      time: "Agora mesmo",
+      read: false,
+      type: "important"
+    };
+    setNotifications((prev) => [newAlert, ...prev]);
+  };
+
+  const handleSyncAllDefaultDestinations = () => {
+    const allDefs = JSON.parse(JSON.stringify(INITIAL_DESTINATIONS));
+    setDestinations(allDefs);
+    if (allDefs.length > 0) {
+      setSelectedDestinationId(allDefs[0].id);
+    }
+    // Add an alert notifying the user
+    const newAlert: NotificationAlert = {
+      id: `alert-sync-all-${Date.now()}`,
+      title: "Cidades Padrão Restauradas",
+      description: "Todas as cidades padrão (Washington, New York, Philadelphia, Atlantic City e Chantilly) foram restauradas com sucesso no seu Diário de Bordo!",
       time: "Agora mesmo",
       read: false,
       type: "important"
@@ -2100,7 +2134,7 @@ export default function App() {
 
   // Auto-sync active itinerary to cloud on changes
   useEffect(() => {
-    if (isOffline || !token || !activeItineraryId || isTravelerMode || token === "traveler-session") return;
+    if (isOffline || !token || !activeItineraryId || isTravelerMode || token === "traveler-session" || !hasLoadedCloud || isFetchingCloud) return;
     if (typeof activeItineraryId === "string" && activeItineraryId.startsWith("local-")) {
       return;
     }
@@ -2482,6 +2516,7 @@ export default function App() {
                   selectedDestinationId={selectedDestinationId}
                   setSelectedDestinationId={setSelectedDestinationId}
                   onSyncWashington={handleSyncWashington}
+                  onSyncAllDefaultDestinations={handleSyncAllDefaultDestinations}
                   onImportDestinationDays={handleImportDestinationDays}
                   onUpdateHotelAndCost={handleUpdateHotelAndCost}
                   onAddTip={handleAddTip}
