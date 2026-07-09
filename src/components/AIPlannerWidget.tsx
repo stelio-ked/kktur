@@ -43,7 +43,6 @@ export default function AIPlannerWidget({
   setActiveTab,
   isReadOnly = false
 }: AIPlannerWidgetProps) {
-  if (isReadOnly) return null;
 
   const [isOpen, setIsOpen] = useState(false);
   const [step, setStep] = useState<"input" | "questions" | "generating" | "success">("input");
@@ -199,6 +198,8 @@ export default function AIPlannerWidget({
     setActiveTab("itinerary");
     handleReset();
   };
+
+  if (isReadOnly) return null;
 
   return (
     <>
