@@ -214,6 +214,22 @@ export default function ItineraryTab({
     return allActivities.every((act) => isActivityCheckedByActiveTraveler(act.id));
   };
 
+  const getDestinationStats = (dest: Destination) => {
+    const allActivities = dest ? dest.days.flatMap((day) => day.activities) : [];
+    const total = allActivities.length;
+    const visited = allActivities.filter((act) => isActivityCheckedByActiveTraveler(act.id)).length;
+    const notVisited = total - visited;
+    const percentage = total > 0 ? Math.round((visited / total) * 100) : 0;
+    return { total, visited, notVisited, percentage };
+  };
+
+  const getDayStats = (day: ItineraryDay) => {
+    const total = day.activities ? day.activities.length : 0;
+    const visited = day.activities ? day.activities.filter((act) => isActivityCheckedByActiveTraveler(act.id)).length : 0;
+    const percentage = total > 0 ? Math.round((visited / total) * 100) : 0;
+    return { total, visited, percentage };
+  };
+
   const handleToggleActivityVisited = (travelerId: string, activityId: string) => {
     if (!onUpdateTravelerChecklists) return;
     const traveler = activeTravelersList.find(t => t.id === travelerId);
@@ -843,10 +859,11 @@ export default function ItineraryTab({
       
       {/* Top Selector for Cities */}
       <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex flex-col gap-3">
-        <div className="flex overflow-x-auto w-full scrollbar-none gap-2 items-center pb-1">
+        <div className="flex overflow-x-auto w-full scrollbar-none gap-2.5 items-center pb-1">
           <span className="text-xs font-extrabold text-slate-400 uppercase tracking-widest mr-2 shrink-0">Cidades:</span>
           {destinations.map((dest) => {
             const visited = isDestinationVisited(dest);
+            const stats = getDestinationStats(dest);
             return (
               <button
                 key={dest.id}
@@ -855,15 +872,35 @@ export default function ItineraryTab({
                   setActiveDayIdx(0);
                   setShowAddActivityForm(false);
                 }}
-                className={`px-4 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer border whitespace-nowrap shrink-0 flex items-center gap-1 ${
+                className={`px-4 py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer border whitespace-nowrap shrink-0 flex flex-col gap-1 items-stretch relative overflow-hidden min-w-[110px] ${
                   activeDestination?.id === dest.id
-                    ? "bg-indigo-600 text-white border-indigo-650"
+                    ? "bg-slate-900 text-white border-slate-950 shadow-sm"
                     : "bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-205"
-                } ${visited ? "line-through decoration-slate-400 opacity-80" : ""}`}
-                title={visited ? `${dest.city} (Totalmente visitada!)` : dest.city}
+                }`}
+                title={visited ? `${dest.city} (Totalmente visitada!)` : `${dest.city} (${stats.percentage}% concluído)`}
               >
-                <span>{dest.city}</span>
-                {visited && <span className="text-[10px] shrink-0">✅</span>}
+                {/* Progress bar at the very top edge of the card */}
+                {stats.total > 0 && (
+                  <div className="absolute top-0 left-0 right-0 h-[3px] bg-slate-200/40">
+                    <div 
+                      className="h-full bg-emerald-500 transition-all duration-300"
+                      style={{ width: `${stats.percentage}%` }}
+                    />
+                  </div>
+                )}
+                
+                <div className="flex items-center justify-between gap-2 w-full pt-0.5">
+                  <span className={visited ? "line-through decoration-slate-400 opacity-70" : ""}>{dest.city}</span>
+                  {visited ? (
+                    <span className="text-[10px] shrink-0">✅</span>
+                  ) : (
+                    stats.total > 0 && (
+                      <span className={`text-[9px] font-mono font-extrabold shrink-0 ${activeDestination?.id === dest.id ? "text-emerald-400" : "text-emerald-600"}`}>
+                        {stats.percentage}%
+                      </span>
+                    )
+                  )}
+                </div>
               </button>
             );
           })}
@@ -920,6 +957,55 @@ export default function ItineraryTab({
           )}
         </div>
       </div>
+
+      {/* KPIs & General Progress Panel */}
+      {activeDestination && (() => {
+        const stats = getDestinationStats(activeDestination);
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-white rounded-2xl p-5 border border-slate-150/70 shadow-3xs">
+            {/* KPI: Visitados */}
+            <div className="bg-emerald-50/40 border border-emerald-100/60 rounded-xl p-3.5 flex flex-col justify-between">
+              <span className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest">Atrações Visitadas</span>
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-2xl font-black text-emerald-700">{stats.visited}</span>
+                <span className="text-[10px] font-bold text-emerald-500">concluídas</span>
+              </div>
+            </div>
+
+            {/* KPI: Não Visitados */}
+            <div className="bg-slate-50/60 border border-slate-100 rounded-xl p-3.5 flex flex-col justify-between">
+              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">Não Visitadas</span>
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-2xl font-black text-slate-700">{stats.notVisited}</span>
+                <span className="text-[10px] font-bold text-slate-400">restantes</span>
+              </div>
+            </div>
+
+            {/* KPI: Total */}
+            <div className="bg-indigo-50/30 border border-indigo-100/40 rounded-xl p-3.5 flex flex-col justify-between">
+              <span className="text-[10px] font-extrabold text-indigo-600 uppercase tracking-widest">Total de Pontos</span>
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-2xl font-black text-indigo-700">{stats.total}</span>
+                <span className="text-[10px] font-bold text-indigo-400">cadastrados</span>
+              </div>
+            </div>
+
+            {/* Progresso Geral de Viagem */}
+            <div className="bg-slate-50/40 border border-slate-100 rounded-xl p-3.5 flex flex-col justify-center space-y-2 col-span-1 sm:col-span-2 lg:col-span-1">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">Progresso do Destino</span>
+                <span className="text-xs font-black text-emerald-600">{stats.percentage}%</span>
+              </div>
+              <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
+                <div 
+                  className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
+                  style={{ width: `${stats.percentage}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showImportTool && (
         <motion.div
@@ -1346,35 +1432,55 @@ export default function ItineraryTab({
               </div>
             ) : (
               <div className="flex flex-row overflow-x-auto gap-2 pb-2 scrollbar-none lg:flex-col lg:space-y-2 lg:overflow-x-visible lg:pb-0 w-full">
-                {activeDestination.days.map((day, dIdx) => (
-                  <button
-                    key={day.id}
-                    onClick={() => {
-                      setActiveDayIdx(dIdx);
-                      setShowAddActivityForm(false);
-                    }}
-                    className={`text-left p-2.5 sm:p-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer flex justify-between items-center whitespace-nowrap shrink-0 lg:w-full lg:whitespace-normal lg:p-3.5 ${
-                      activeDayIdx === dIdx
-                        ? "bg-slate-900 border-slate-950 text-white shadow-md font-bold"
-                        : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 lg:gap-0 lg:flex-row lg:items-start lg:justify-between lg:w-full">
-                      <div>
-                        <p className={`font-black uppercase tracking-wider text-[10px] ${activeDayIdx === dIdx ? "text-amber-400" : "text-indigo-600"}`}>
-                          Dia {day.dayNumber}
-                        </p>
-                        <p className={`text-[10px] ${activeDayIdx === dIdx ? "text-white/80" : "text-slate-400"}`}>{day.dateStr.split(" - ")[0] || day.dateStr}</p>
-                        <p className={`font-bold mt-0.5 text-xs max-w-[110px] sm:max-w-[140px] lg:max-w-[180px] truncate ${activeDayIdx === dIdx ? "text-white" : "text-slate-700"}`}>{day.title}</p>
+                {activeDestination.days.map((day, dIdx) => {
+                  const dayStats = getDayStats(day);
+                  return (
+                    <button
+                      key={day.id}
+                      onClick={() => {
+                        setActiveDayIdx(dIdx);
+                        setShowAddActivityForm(false);
+                      }}
+                      className={`text-left p-2.5 sm:p-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer flex justify-between items-center whitespace-nowrap shrink-0 lg:w-full lg:whitespace-normal lg:p-3.5 relative overflow-hidden ${
+                        activeDayIdx === dIdx
+                          ? "bg-slate-900 border-slate-950 text-white shadow-md font-bold"
+                          : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
+                      }`}
+                    >
+                      {/* Progress bar at the very top edge of the day card */}
+                      {dayStats.total > 0 && (
+                        <div className="absolute top-0 left-0 right-0 h-[3px] bg-slate-200/30">
+                          <div 
+                            className="h-full bg-emerald-500 transition-all duration-300"
+                            style={{ width: `${dayStats.percentage}%` }}
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 lg:gap-0 lg:flex-row lg:items-start lg:justify-between lg:w-full w-full pt-1">
+                        <div>
+                          <p className={`font-black uppercase tracking-wider text-[10px] ${activeDayIdx === dIdx ? "text-amber-400" : "text-indigo-600"}`}>
+                            Dia {day.dayNumber}
+                          </p>
+                          <p className={`text-[10px] ${activeDayIdx === dIdx ? "text-white/80" : "text-slate-400"}`}>{day.dateStr.split(" - ")[0] || day.dateStr}</p>
+                          <p className={`font-bold mt-0.5 text-xs max-w-[110px] sm:max-w-[140px] lg:max-w-[180px] truncate ${activeDayIdx === dIdx ? "text-white" : "text-slate-700"}`}>{day.title}</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 ml-2 shrink-0">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                            activeDayIdx === dIdx ? "bg-amber-400/20 text-amber-350" : "bg-slate-200/60 text-slate-500"
+                          }`}>
+                            {day.activities.length} act
+                          </span>
+                          {dayStats.total > 0 && (
+                            <span className={`text-[9px] font-extrabold ${activeDayIdx === dIdx ? "text-emerald-400" : "text-emerald-600"}`}>
+                              {dayStats.percentage}%
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full font-bold self-center ml-2 ${
-                        activeDayIdx === dIdx ? "bg-amber-400/20 text-amber-350" : "bg-slate-200/60 text-slate-500"
-                      }`}>
-                        {day.activities.length} act
-                      </span>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             )}
 
