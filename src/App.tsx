@@ -1055,17 +1055,50 @@ export default function App() {
 
   const handleUpdateTravelerChecklists = (travelerId: string, checkedActivities: string, packingItems: string) => {
     setTravelers((prev) => {
-      const updated = prev.map((t) => (t.id === travelerId ? { ...t, checkedActivities, packingItems } : t));
+      let found = false;
+      const cleanTargetId = String(travelerId).replace(/^t-/, "");
+
+      let updated = prev.map((t) => {
+        const cleanTId = String(t.id).replace(/^t-/, "");
+        if (cleanTId === cleanTargetId || String(t.id) === String(travelerId)) {
+          found = true;
+          return { ...t, checkedActivities, packingItems };
+        }
+        return t;
+      });
+
+      if (!found) {
+        if (prev.length === 0) {
+          updated = [{
+            id: travelerId || "t-organizer",
+            name: currentUser?.name || "Você",
+            role: "Organizador",
+            email: currentUser?.email || "",
+            checkedActivities,
+            packingItems
+          }];
+        } else {
+          const currentEmailNorm = currentUser?.email?.toLowerCase().trim();
+          let emailIdx = currentEmailNorm ? prev.findIndex(t => t.email?.toLowerCase().trim() === currentEmailNorm) : -1;
+          if (emailIdx === -1) emailIdx = 0;
+          updated = prev.map((t, idx) => (idx === emailIdx ? { ...t, checkedActivities, packingItems } : t));
+        }
+      }
+
       const payload = {
         destinations,
         costs,
+        costCategories,
         travelers: updated,
         documents,
         flights,
         generalTips,
-        notifications
+        notifications,
+        transactionLogs
       };
-      saveCurrentItineraryToStore(activeItineraryId, payload);
+      if (activeItineraryId) {
+        saveCurrentItineraryToStore(activeItineraryId, payload);
+      }
       return updated;
     });
   };

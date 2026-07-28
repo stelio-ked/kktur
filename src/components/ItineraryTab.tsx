@@ -206,8 +206,12 @@ export default function ItineraryTab({
   // Checked activities
   const isActivityCheckedByActiveTraveler = (actId: string) => {
     if (!activeTraveler?.checkedActivities) return false;
-    const checkedList = activeTraveler.checkedActivities.split(",").map(id => id.trim());
-    return checkedList.includes(actId);
+    const cleanActId = String(actId).replace(/^act-/, "");
+    const checkedList = activeTraveler.checkedActivities
+      .split(",")
+      .map(id => id.trim().replace(/^act-/, ""))
+      .filter(Boolean);
+    return checkedList.includes(cleanActId);
   };
 
   const isDestinationVisited = (dest: Destination) => {
@@ -234,17 +238,25 @@ export default function ItineraryTab({
 
   const handleToggleActivityVisited = (travelerId: string, activityId: string) => {
     if (!onUpdateTravelerChecklists) return;
-    const traveler = activeTravelersList.find(t => t.id === travelerId);
+    const cleanTargetTravelerId = String(travelerId).replace(/^t-/, "");
+    const traveler = activeTravelersList.find(
+      t => String(t.id) === String(travelerId) || String(t.id).replace(/^t-/, "") === cleanTargetTravelerId
+    ) || activeTraveler;
+
     if (!traveler) return;
-    
-    let checkedSplits = traveler.checkedActivities ? traveler.checkedActivities.split(",").filter(id => id.trim() !== "") : [];
-    if (checkedSplits.includes(activityId)) {
-      checkedSplits = checkedSplits.filter(id => id !== activityId);
+
+    const cleanActId = String(activityId).replace(/^act-/, "");
+    let checkedSplits = traveler.checkedActivities
+      ? traveler.checkedActivities.split(",").map(id => id.trim().replace(/^act-/, "")).filter(Boolean)
+      : [];
+
+    if (checkedSplits.includes(cleanActId)) {
+      checkedSplits = checkedSplits.filter(id => id !== cleanActId);
     } else {
-      checkedSplits.push(activityId);
+      checkedSplits.push(cleanActId);
     }
-    
-    onUpdateTravelerChecklists(travelerId, checkedSplits.join(","), traveler.packingItems || "");
+
+    onUpdateTravelerChecklists(traveler.id, checkedSplits.join(","), traveler.packingItems || "");
   };
 
   // Packing list
