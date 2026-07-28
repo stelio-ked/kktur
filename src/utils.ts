@@ -453,27 +453,23 @@ export function canDeleteEntity(
   userEmail: string | undefined,
   entityCreatorEmail: string | undefined
 ): boolean {
+  if (!userEmail) return false;
   const normalizedUserRole = (userRole || "").trim();
   const lowerRole = normalizedUserRole.toLowerCase();
   
-  // 1. Administrador has unlimited delete access
-  if (lowerRole === "administrador" || normalizedUserRole === "Administrador") {
+  // 1. Administrador, Organizador or any logged in account user
+  if (
+    lowerRole === "administrador" || 
+    lowerRole === "organizador" || 
+    lowerRole === "criador" || 
+    lowerRole === "proprietário" ||
+    userEmail
+  ) {
     return true;
   }
   
-  // 2. Organizador and Finanças can delete only what they created
-  if (lowerRole === "organizador" || lowerRole === "finanças") {
-    if (!userEmail) return false;
-    if (!entityCreatorEmail) {
-      // Fallback: If no creator email is recorded (e.g. default/legacy elements),
-      // allow Organizador to delete, but NOT Finanças.
-      return lowerRole === "organizador";
-    }
-    return userEmail.trim().toLowerCase() === entityCreatorEmail.trim().toLowerCase();
-  }
-  
-  // 3. All other roles do not have permission to delete anything
-  return false;
+  if (!entityCreatorEmail) return true;
+  return userEmail.trim().toLowerCase() === entityCreatorEmail.trim().toLowerCase();
 }
 
 /**

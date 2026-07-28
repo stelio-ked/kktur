@@ -59,7 +59,7 @@ export default function SettingsTab({
     ? travelers.find(t => t.email?.toLowerCase().trim() === userEmailNormalized)
     : undefined;
   const userRole = currentUserTraveler?.role || "Viajante";
-  const isAdmin = ["administrador", "organizador"].includes(userRole.toLowerCase().trim());
+  const isAdmin = (!!currentUser && !isTravelerMode) || ["administrador", "organizador", "criador", "proprietário"].includes(userRole.toLowerCase().trim());
 
   const fetchLogs = async () => {
     if (!itineraryId) return;

@@ -14,7 +14,12 @@ import {
   Sparkles,
   Info,
   Activity,
-  History
+  History,
+  Pencil,
+  Plus,
+  UserPlus,
+  Check,
+  X
 } from "lucide-react";
 import { Traveler, CostItem, Destination, FlightInfo, TravelDocument } from "../types";
 import { motion, AnimatePresence } from "motion/react";
@@ -22,6 +27,8 @@ import { motion, AnimatePresence } from "motion/react";
 interface AdminDashboardProps {
   travelers: Traveler[];
   onRemoveTraveler: (id: string) => void;
+  onAddTraveler?: (name: string, email?: string, role?: string) => void;
+  onEditTraveler?: (id: string, name: string, email?: string, role?: string) => void;
   costs: CostItem[];
   onRemoveCost: (id: string) => void;
   destinations: Destination[];
@@ -41,6 +48,8 @@ type AdminTab = "travelers" | "costs" | "destinations" | "flights" | "documents"
 export default function AdminDashboard({
   travelers,
   onRemoveTraveler,
+  onAddTraveler,
+  onEditTraveler,
   costs,
   onRemoveCost,
   destinations,
@@ -57,9 +66,44 @@ export default function AdminDashboard({
   const [activeSubTab, setActiveSubTab] = useState<AdminTab>("travelers");
   const [searchQuery, setSearchQuery] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // New Traveler Form State
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newRole, setNewRole] = useState("Viajante");
+
+  // Edit Traveler State
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editRole, setEditRole] = useState("Viajante");
   
   const [accessLogs, setAccessLogs] = useState<any[]>([]);
   const [loadingAccessLogs, setLoadingAccessLogs] = useState(false);
+
+  const handleCreateTravelerSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName.trim() || !onAddTraveler) return;
+    onAddTraveler(newName.trim(), newEmail.trim() || undefined, newRole);
+    setNewName("");
+    setNewEmail("");
+    setNewRole("Viajante");
+    setShowAddForm(false);
+  };
+
+  const handleStartEdit = (t: Traveler) => {
+    setEditingId(t.id);
+    setEditName(t.name);
+    setEditEmail(t.email || "");
+    setEditRole(t.role || "Viajante");
+  };
+
+  const handleSaveEdit = (id: string) => {
+    if (!editName.trim() || !onEditTraveler) return;
+    onEditTraveler(id, editName.trim(), editEmail.trim() || undefined, editRole);
+    setEditingId(null);
+  };
 
   useEffect(() => {
     if (activeSubTab === "access_logs" && itineraryId && token) {
@@ -273,14 +317,93 @@ export default function AdminDashboard({
             >
               {/* Category: TRAVELERS */}
               {activeSubTab === "travelers" && (
-                <div className="space-y-3">
-                  <div className="bg-indigo-50/50 rounded-xl p-3 border border-indigo-100 flex items-start gap-2.5 mb-4">
-                    <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
-                    <p className="text-slate-600 text-xs leading-relaxed">
-                      Gerenciamento centralizado de membros convidados para a viagem. Ao excluir um membro, você revoga
-                      imediatamente seu acesso de visualização ou coordenação. O organizador ou criador original possui as mesas ações.
-                    </p>
+                <div className="space-y-4">
+                  <div className="bg-indigo-50/50 rounded-xl p-3 border border-indigo-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div className="flex items-start gap-2.5">
+                      <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+                      <p className="text-slate-600 text-xs leading-relaxed">
+                        Gerenciamento centralizado de membros e permissões de acesso da viagem. Altere nomes, e-mails e níveis de acesso (Administrador, Organizador, Viajante, Co-piloto, etc) em tempo real.
+                      </p>
+                    </div>
+                    {onAddTraveler && (
+                      <button
+                        onClick={() => setShowAddForm(!showAddForm)}
+                        className="flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer"
+                      >
+                        {showAddForm ? <X className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+                        <span>{showAddForm ? "Cancelar" : "Adicionar Usuário / Viajante"}</span>
+                      </button>
+                    )}
                   </div>
+
+                  {/* Add New Traveler Form */}
+                  {showAddForm && (
+                    <motion.form 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      onSubmit={handleCreateTravelerSubmit}
+                      className="bg-white p-4 rounded-2xl border border-indigo-200 shadow-md space-y-3"
+                    >
+                      <div className="flex items-center gap-2 border-b border-indigo-50 pb-2">
+                        <UserPlus className="w-4 h-4 text-indigo-600" />
+                        <h4 className="text-xs font-extrabold text-indigo-950 uppercase tracking-wider">Novo Cadastro de Viajante / Usuário</h4>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Nome Completo</label>
+                          <input
+                            type="text"
+                            placeholder="Ex: Maria Silva"
+                            value={newName}
+                            onChange={(e) => setNewName(e.target.value)}
+                            required
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">E-mail de Acesso (Opcional)</label>
+                          <input
+                            type="email"
+                            placeholder="exemplo@email.com"
+                            value={newEmail}
+                            onChange={(e) => setNewEmail(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:border-indigo-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Cargo / Nível de Acesso</label>
+                          <select
+                            value={newRole}
+                            onChange={(e) => setNewRole(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:border-indigo-500 cursor-pointer"
+                          >
+                            <option value="Administrador">Administrador (Acesso Total)</option>
+                            <option value="Organizador">Organizador (Coordenação)</option>
+                            <option value="Viajante">Viajante (Participante)</option>
+                            <option value="Co-piloto">Co-piloto (Edição de Roteiro)</option>
+                            <option value="Finanças">Finanças (Gestão Financeira)</option>
+                            <option value="Colaborador">Colaborador (Dicas e Notas)</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setShowAddForm(false)}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-xs"
+                        >
+                          Salvar Novo Viajante
+                        </button>
+                      </div>
+                    </motion.form>
+                  )}
 
                   {filteredTravelers.length === 0 ? (
                     <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-200">
@@ -292,60 +415,134 @@ export default function AdminDashboard({
                       {filteredTravelers.map((traveler) => (
                         <div 
                           key={traveler.id} 
-                          className="bg-slate-50 rounded-xl p-4 border border-slate-100 hover:border-slate-200 transition-colors flex items-center justify-between gap-4"
+                          className="bg-slate-50 rounded-xl p-4 border border-slate-100 hover:border-slate-200 transition-colors"
                         >
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 font-extrabold flex items-center justify-center text-sm">
-                              {traveler.name.charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <div className="font-bold text-xs text-slate-800 flex items-center gap-2">
-                                {traveler.name}
-                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                                  traveler.role === "Administrador" 
-                                    ? "bg-slate-900 text-white" 
-                                    : traveler.role === "Organizador" 
-                                      ? "bg-indigo-100 text-indigo-800" 
-                                      : "bg-slate-200 text-slate-700"
-                                }`}>
-                                  {traveler.role || "Viajante"}
-                                </span>
+                          {editingId === traveler.id ? (
+                            <div className="space-y-3 bg-white p-3 rounded-lg border border-indigo-200">
+                              <p className="text-[10px] font-extrabold text-indigo-700 uppercase tracking-wider">Editando Viajante / Usuário</p>
+                              <div className="grid grid-cols-1 gap-2">
+                                <div>
+                                  <label className="text-[9px] font-bold text-slate-400 uppercase">Nome</label>
+                                  <input 
+                                    type="text" 
+                                    value={editName}
+                                    onChange={(e) => setEditName(e.target.value)}
+                                    className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white font-medium text-slate-800"
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[9px] font-bold text-slate-400 uppercase">E-mail</label>
+                                  <input 
+                                    type="email" 
+                                    value={editEmail}
+                                    onChange={(e) => setEditEmail(e.target.value)}
+                                    className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white text-slate-800"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[9px] font-bold text-slate-400 uppercase">Função / Cargo</label>
+                                  <select
+                                    value={editRole}
+                                    onChange={(e) => setEditRole(e.target.value)}
+                                    className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white font-bold text-slate-800 cursor-pointer"
+                                  >
+                                    <option value="Administrador">Administrador</option>
+                                    <option value="Organizador">Organizador</option>
+                                    <option value="Viajante">Viajante</option>
+                                    <option value="Co-piloto">Co-piloto</option>
+                                    <option value="Finanças">Finanças</option>
+                                    <option value="Colaborador">Colaborador</option>
+                                  </select>
+                                </div>
                               </div>
-                              <div className="text-[11px] text-slate-500 mt-0.5">{traveler.email || "E-mail não cadastrado"}</div>
-                              {traveler.createdByEmail && (
-                                <div className="text-[9px] text-slate-400 mt-1">Convidado por: {traveler.createdByEmail}</div>
-                              )}
+                              <div className="flex justify-end gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingId(null)}
+                                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-bold transition cursor-pointer"
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveEdit(traveler.id)}
+                                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold transition cursor-pointer flex items-center gap-1"
+                                >
+                                  <Check className="w-3 h-3" /> Salvar
+                                </button>
+                              </div>
                             </div>
-                          </div>
+                          ) : (
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 font-extrabold flex items-center justify-center text-sm shrink-0">
+                                  {traveler.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="font-bold text-xs text-slate-800 flex items-center gap-2 flex-wrap">
+                                    <span className="truncate">{traveler.name}</span>
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                                      traveler.role === "Administrador" 
+                                        ? "bg-slate-900 text-white" 
+                                        : traveler.role === "Organizador" 
+                                          ? "bg-indigo-100 text-indigo-800" 
+                                          : traveler.role === "Co-piloto"
+                                            ? "bg-amber-100 text-amber-800"
+                                            : traveler.role === "Finanças"
+                                              ? "bg-emerald-100 text-emerald-800"
+                                              : "bg-slate-200 text-slate-700"
+                                    }`}>
+                                      {traveler.role || "Viajante"}
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 mt-0.5 truncate">{traveler.email || "E-mail não cadastrado"}</div>
+                                  {traveler.createdByEmail && (
+                                    <div className="text-[9px] text-slate-400 mt-0.5 truncate">Convidado por: {traveler.createdByEmail}</div>
+                                  )}
+                                </div>
+                              </div>
 
-                          {/* Actions */}
-                          <div>
-                            {confirmDeleteId === traveler.id ? (
-                              <div className="flex items-center gap-1.5 animate-pulse bg-white/85 p-1 rounded-lg border border-rose-200">
-                                <span className="text-[9px] text-rose-600 font-black uppercase px-1">Excluir?</span>
-                                <button 
-                                  onClick={() => handleExecuteDelete(traveler.id)}
-                                  className="px-2 py-1 bg-rose-600 text-white rounded-md text-[10px] font-bold hover:bg-rose-700 transition"
-                                >
-                                  Sim
-                                </button>
-                                <button 
-                                  onClick={handleCancelDelete}
-                                  className="px-2 py-1 bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold hover:bg-slate-350 transition"
-                                >
-                                  Não
-                                </button>
+                              {/* Actions */}
+                              <div className="flex items-center gap-1 shrink-0">
+                                {onEditTraveler && (
+                                  <button
+                                    onClick={() => handleStartEdit(traveler)}
+                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Editar dados e cargo"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+
+                                {confirmDeleteId === traveler.id ? (
+                                  <div className="flex items-center gap-1.5 animate-pulse bg-white/85 p-1 rounded-lg border border-rose-200">
+                                    <span className="text-[9px] text-rose-600 font-black uppercase px-1">Excluir?</span>
+                                    <button 
+                                      onClick={() => handleExecuteDelete(traveler.id)}
+                                      className="px-2 py-1 bg-rose-600 text-white rounded-md text-[10px] font-bold hover:bg-rose-700 transition"
+                                    >
+                                      Sim
+                                    </button>
+                                    <button 
+                                      onClick={handleCancelDelete}
+                                      className="px-2 py-1 bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold hover:bg-slate-350 transition"
+                                    >
+                                      Não
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => handleTriggerDelete(traveler.id)}
+                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Excluir membro"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
                               </div>
-                            ) : (
-                              <button
-                                onClick={() => handleTriggerDelete(traveler.id)}
-                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                title="Excluir membro"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

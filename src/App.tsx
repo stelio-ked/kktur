@@ -955,11 +955,12 @@ export default function App() {
   };
 
   // Traveler Operations
-  const handleAddTraveler = (name: string, email?: string) => {
+  const handleAddTraveler = (name: string, email?: string, role?: string) => {
     const newId = `t-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    logTransaction("Adicionado", "Membro", newId, `${name} (${email || "Sem e-mail"})`);
+    const selectedRole = role || "Viajante";
+    logTransaction("Adicionado", "Membro", newId, `${name} (${email || "Sem e-mail"}) [Cargo: ${selectedRole}]`);
     setTravelers((prev) => {
-      const updated = [...prev, { id: newId, name, email, role: "Viajante", createdByEmail: currentUser?.email || "" }];
+      const updated = [...prev, { id: newId, name, email, role: selectedRole, createdByEmail: currentUser?.email || "" }];
       const payload = {
         destinations,
         costs,
@@ -2223,7 +2224,9 @@ export default function App() {
     ? travelers.find(t => t.email?.toLowerCase().trim() === userEmailNormalized)
     : undefined;
   const userRole = currentUserTraveler?.role || "Viajante";
-  const isAdmin = ["administrador", "organizador"].includes(userRole.toLowerCase().trim());
+  const activeItinerary = itineraries.find(it => String(it.id) === String(activeItineraryId));
+  const isOwner = activeItinerary && currentUser && (activeItinerary.ownerId === currentUser.id);
+  const isAdmin = (!!currentUser && !isTravelerMode) || isOwner || ["administrador", "organizador", "criador", "proprietário"].includes(userRole.toLowerCase().trim());
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans antialiased text-slate-900">
@@ -2624,6 +2627,8 @@ export default function App() {
             <AdminDashboard
               travelers={travelers}
               onRemoveTraveler={handleRemoveTraveler}
+              onAddTraveler={handleAddTraveler}
+              onEditTraveler={handleEditTraveler}
               costs={costs}
               onRemoveCost={handleRemoveCost}
               destinations={destinations}
