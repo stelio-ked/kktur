@@ -721,6 +721,15 @@ const authMiddleware = (req: any, res: any, next: any) => {
 const typingParticipants: Record<number, Record<string, number>> = {};
 
 async function startServer() {
+  if (db) {
+    try {
+      await db.execute(sql`ALTER TABLE "destinations" ADD COLUMN IF NOT EXISTS "ratings" text;`);
+      console.log("Database schema check complete: 'destinations.ratings' column verified.");
+    } catch (err) {
+      console.error("Error ensuring database schema columns:", err);
+    }
+  }
+
   const app = express();
   const PORT = 3000;
 
