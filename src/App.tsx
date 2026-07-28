@@ -2271,8 +2271,13 @@ export default function App() {
     : undefined;
   const userRole = currentUserTraveler?.role || "Viajante";
   const activeItinerary = itineraries.find(it => String(it.id) === String(activeItineraryId));
-  const isOwner = activeItinerary && currentUser && (activeItinerary.ownerId === currentUser.id);
-  const isAdmin = (!!currentUser && !isTravelerMode) || isOwner || ["administrador", "organizador", "criador", "proprietário"].includes(userRole.toLowerCase().trim());
+  const isOwner = !!(activeItinerary && currentUser && activeItinerary.ownerId === currentUser.id);
+  const isUserAdminRole = ["administrador", "organizador", "criador", "proprietário", "admin"].includes(userRole.toLowerCase().trim());
+  const isAdmin = !isTravelerMode && !!currentUser && (
+    isOwner ||
+    isUserAdminRole ||
+    !activeItinerary?.ownerId
+  );
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans antialiased text-slate-900">
@@ -2644,6 +2649,7 @@ export default function App() {
               itineraryId={activeItineraryId}
               isTravelerMode={isTravelerMode}
               currentUser={currentUser}
+              isAdmin={isAdmin}
               travelers={travelers}
               destinations={destinations}
               costs={costs}

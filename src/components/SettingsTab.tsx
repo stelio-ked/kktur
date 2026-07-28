@@ -37,6 +37,7 @@ interface SettingsTabProps {
   costs?: CostItem[];
   ecoMode?: boolean;
   onToggleEcoMode?: () => void;
+  isAdmin?: boolean;
 }
 
 export default function SettingsTab({ 
@@ -47,7 +48,8 @@ export default function SettingsTab({
   destinations = [],
   costs = [],
   ecoMode = false,
-  onToggleEcoMode
+  onToggleEcoMode,
+  isAdmin: isAdminProp
 }: SettingsTabProps) {
   const [logs, setLogs] = useState<AccessLog[]>([]);
   const [loading, setLoading] = useState(false);
@@ -59,7 +61,9 @@ export default function SettingsTab({
     ? travelers.find(t => t.email?.toLowerCase().trim() === userEmailNormalized)
     : undefined;
   const userRole = currentUserTraveler?.role || "Viajante";
-  const isAdmin = (!!currentUser && !isTravelerMode) || ["administrador", "organizador", "criador", "proprietário"].includes(userRole.toLowerCase().trim());
+  const isUserAdminRole = ["administrador", "organizador", "criador", "proprietário", "admin"].includes(userRole.toLowerCase().trim());
+  const calculatedIsAdmin = !isTravelerMode && !!currentUser && (isUserAdminRole || userRole !== "Viajante" || !currentUserTraveler);
+  const isAdmin = isAdminProp !== undefined ? isAdminProp : calculatedIsAdmin;
 
   const fetchLogs = async () => {
     if (!itineraryId) return;
