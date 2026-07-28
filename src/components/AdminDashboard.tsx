@@ -35,6 +35,8 @@ interface AdminDashboardProps {
   onRemoveDestination: (id: string) => void;
   flights: FlightInfo[];
   onRemoveFlight: (id: string) => void;
+  onAddFlight?: (flight: Omit<FlightInfo, "id">) => void;
+  onUpdateFlight?: (flight: FlightInfo) => void;
   documents: TravelDocument[];
   onRemoveDocument: (id: string) => void;
   currentUser?: { email?: string; name?: string } | null;
@@ -56,6 +58,8 @@ export default function AdminDashboard({
   onRemoveDestination,
   flights,
   onRemoveFlight,
+  onAddFlight,
+  onUpdateFlight,
   documents,
   onRemoveDocument,
   currentUser,
@@ -78,6 +82,113 @@ export default function AdminDashboard({
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editRole, setEditRole] = useState("Viajante");
+
+  // Flight Modal & Form State in AdminDashboard
+  const [showAddFlightModal, setShowAddFlightModal] = useState(false);
+  const [editingFlight, setEditingFlight] = useState<FlightInfo | null>(null);
+  const [fAirline, setFAirline] = useState("");
+  const [fFlightCode, setFFlightCode] = useState("");
+  const [fDepartureCity, setFDepartureCity] = useState("");
+  const [fDepartureCode, setFDepartureCode] = useState("");
+  const [fDepartureTime, setFDepartureTime] = useState("");
+  const [fDateStr, setFDateStr] = useState("");
+  const [fArrivalCity, setFArrivalCity] = useState("");
+  const [fArrivalCode, setFArrivalCode] = useState("");
+  const [fArrivalTime, setFArrivalTime] = useState("");
+  const [fArrivalDateStr, setFArrivalDateStr] = useState("");
+  const [fDuration, setFDuration] = useState("");
+  const [fStatus, setFStatus] = useState("Confirmado");
+  const [fGate, setFGate] = useState("");
+  const [fLocator, setFLocator] = useState("");
+
+  const resetFlightForm = () => {
+    setFAirline("");
+    setFFlightCode("");
+    setFDepartureCity("");
+    setFDepartureCode("");
+    setFDepartureTime("");
+    setFDateStr("");
+    setFArrivalCity("");
+    setFArrivalCode("");
+    setFArrivalTime("");
+    setFArrivalDateStr("");
+    setFDuration("");
+    setFStatus("Confirmado");
+    setFGate("");
+    setFLocator("");
+  };
+
+  const handleStartAddFlight = () => {
+    resetFlightForm();
+    setEditingFlight(null);
+    setShowAddFlightModal(true);
+  };
+
+  const handleStartEditFlight = (flight: FlightInfo) => {
+    setEditingFlight(flight);
+    setFAirline(flight.airline || "");
+    setFFlightCode(flight.flightCode || "");
+    setFDepartureCity(flight.departureCity || "");
+    setFDepartureCode(flight.departureCode || "");
+    setFDepartureTime(flight.departureTime || "");
+    setFDateStr(flight.dateStr || "");
+    setFArrivalCity(flight.arrivalCity || "");
+    setFArrivalCode(flight.arrivalCode || "");
+    setFArrivalTime(flight.arrivalTime || "");
+    setFArrivalDateStr(flight.arrivalDateStr || flight.dateStr || "");
+    setFDuration(flight.duration || "");
+    setFStatus(flight.status || "Confirmado");
+    setFGate(flight.gate || "");
+    setFLocator(flight.locator || "");
+    setShowAddFlightModal(true);
+  };
+
+  const handleSaveFlightSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingFlight) {
+      if (onUpdateFlight) {
+        onUpdateFlight({
+          ...editingFlight,
+          airline: fAirline.trim(),
+          flightCode: fFlightCode.trim(),
+          departureCity: fDepartureCity.trim(),
+          departureCode: fDepartureCode.trim().toUpperCase(),
+          departureTime: fDepartureTime.trim(),
+          dateStr: fDateStr.trim(),
+          arrivalCity: fArrivalCity.trim(),
+          arrivalCode: fArrivalCode.trim().toUpperCase(),
+          arrivalTime: fArrivalTime.trim(),
+          arrivalDateStr: fArrivalDateStr.trim() || fDateStr.trim(),
+          duration: fDuration.trim(),
+          status: fStatus,
+          gate: fGate.trim() || undefined,
+          locator: fLocator.trim() || undefined,
+        });
+      }
+      setEditingFlight(null);
+    } else {
+      if (onAddFlight) {
+        onAddFlight({
+          airline: fAirline.trim(),
+          flightCode: fFlightCode.trim(),
+          departureCity: fDepartureCity.trim(),
+          departureCode: fDepartureCode.trim().toUpperCase(),
+          departureTime: fDepartureTime.trim(),
+          dateStr: fDateStr.trim(),
+          arrivalCity: fArrivalCity.trim(),
+          arrivalCode: fArrivalCode.trim().toUpperCase(),
+          arrivalTime: fArrivalTime.trim(),
+          arrivalDateStr: fArrivalDateStr.trim() || fDateStr.trim(),
+          duration: fDuration.trim(),
+          status: fStatus,
+          gate: fGate.trim() || undefined,
+          locator: fLocator.trim() || undefined,
+        });
+      }
+    }
+    setShowAddFlightModal(false);
+    resetFlightForm();
+  };
   
   const [accessLogs, setAccessLogs] = useState<any[]>([]);
   const [loadingAccessLogs, setLoadingAccessLogs] = useState(false);
@@ -715,19 +826,33 @@ export default function AdminDashboard({
 
               {/* Category: FLIGHTS */}
               {activeSubTab === "flights" && (
-                <div className="space-y-3">
-                  <div className="bg-cyan-50/50 rounded-xl p-3 border border-cyan-100 flex items-start gap-2.5 mb-4">
-                    <Info className="w-4 h-4 text-cyan-600 shrink-0 mt-0.5" />
-                    <p className="text-slate-600 text-xs leading-relaxed">
-                      Gerenciamento centralizado de trechos e passagens aéreas registradas. Um clique exclui o voo do painel
-                      de voos global e de sua timeline de monitoração automática.
-                    </p>
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-cyan-50/50 rounded-xl p-3 border border-cyan-100">
+                    <div className="flex items-start gap-2.5">
+                      <Info className="w-4 h-4 text-cyan-600 shrink-0 mt-0.5" />
+                      <p className="text-slate-600 text-xs leading-relaxed">
+                        Gerenciamento centralizado de trechos e passagens aéreas registradas. Adicione, edite ou exclua trechos com sincronização automática.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleStartAddFlight}
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shrink-0 shadow-xs cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Adicionar Trecho
+                    </button>
                   </div>
 
                   {filteredFlights.length === 0 ? (
                     <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-200">
                       <Plane className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                       <p className="text-slate-500 text-xs font-bold">Nenhum trecho aéreo encontrado.</p>
+                      <button
+                        onClick={handleStartAddFlight}
+                        className="mt-3 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-lg border border-indigo-200 transition inline-flex items-center gap-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Adicionar Primeiro Trecho
+                      </button>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -740,6 +865,7 @@ export default function AdminDashboard({
                             <div className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
                               <span>{flight.airline}</span>
                               <span className="px-1.5 py-0.5 rounded bg-slate-200 text-[10px] font-bold">{flight.flightCode}</span>
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[9px] font-extrabold uppercase">{flight.status}</span>
                             </div>
                             <div className="text-[11px] text-slate-600 mt-1">
                               <span className="font-extrabold">{flight.departureCity} ({flight.departureCode})</span> → <span className="font-extrabold">{flight.arrivalCity} ({flight.arrivalCode})</span>
@@ -747,12 +873,25 @@ export default function AdminDashboard({
                             <div className="text-[10px] text-slate-500 mt-1">
                               Partida: {flight.dateStr} às {flight.departureTime}
                             </div>
+                            {(flight.locator || flight.gate) && (
+                              <div className="text-[9px] text-indigo-600 font-semibold mt-1">
+                                {flight.locator && <span>Localizador: {flight.locator} </span>}
+                                {flight.gate && <span>| Portão: {flight.gate}</span>}
+                              </div>
+                            )}
                             {flight.createdByEmail && (
-                              <div className="text-[9px] text-slate-400 mt-2">Criado por: {flight.createdByEmail}</div>
+                              <div className="text-[9px] text-slate-400 mt-1">Criado por: {flight.createdByEmail}</div>
                             )}
                           </div>
 
-                          <div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleStartEditFlight(flight)}
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                              title="Editar trecho de voo"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
                             {confirmDeleteId === flight.id ? (
                               <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-rose-200 animate-pulse">
                                 <button 
@@ -771,7 +910,7 @@ export default function AdminDashboard({
                             ) : (
                               <button
                                 onClick={() => handleTriggerDelete(flight.id)}
-                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                                 title="Excluir trecho de voo"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -780,6 +919,213 @@ export default function AdminDashboard({
                           </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {/* Modal de Adicionar / Editar Voo */}
+                  {showAddFlightModal && (
+                    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                      <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                          <h3 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
+                            <Plane className="w-5 h-5 text-indigo-600" />
+                            {editingFlight ? "Editar Trecho de Voo" : "Adicionar Trecho de Voo"}
+                          </h3>
+                          <button
+                            onClick={() => setShowAddFlightModal(false)}
+                            className="p-1 text-slate-400 hover:text-slate-600 rounded-lg transition"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
+
+                        <form onSubmit={handleSaveFlightSubmit} className="space-y-4 text-xs">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">Companhia Aérea</label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="ex: LATAM Airlines"
+                                value={fAirline}
+                                onChange={(e) => setFAirline(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">Código do Voo</label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="ex: LA 3035"
+                                value={fFlightCode}
+                                onChange={(e) => setFFlightCode(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">Cidade Saída</label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="ex: Florianópolis"
+                                value={fDepartureCity}
+                                onChange={(e) => setFDepartureCity(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">IATA Saída</label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="ex: FLN"
+                                value={fDepartureCode}
+                                onChange={(e) => setFDepartureCode(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">Data Saída</label>
+                              <input
+                                type="date"
+                                required
+                                value={fDateStr}
+                                onChange={(e) => setFDateStr(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">Hora Saída</label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="ex: 10:35"
+                                value={fDepartureTime}
+                                onChange={(e) => setFDepartureTime(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">Cidade Chegada</label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="ex: São Paulo"
+                                value={fArrivalCity}
+                                onChange={(e) => setFArrivalCity(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">IATA Chegada</label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="ex: CGH"
+                                value={fArrivalCode}
+                                onChange={(e) => setFArrivalCode(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">Data Chegada</label>
+                              <input
+                                type="date"
+                                value={fArrivalDateStr}
+                                onChange={(e) => setFArrivalDateStr(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">Hora Chegada</label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="ex: 11:45"
+                                value={fArrivalTime}
+                                onChange={(e) => setFArrivalTime(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-3">
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">Duração</label>
+                              <input
+                                type="text"
+                                placeholder="ex: 1h 10m"
+                                value={fDuration}
+                                onChange={(e) => setFDuration(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">Portão</label>
+                              <input
+                                type="text"
+                                placeholder="ex: B24"
+                                value={fGate}
+                                onChange={(e) => setFGate(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold mb-1">Localizador</label>
+                              <input
+                                type="text"
+                                placeholder="ex: HFLMLL"
+                                value={fLocator}
+                                onChange={(e) => setFLocator(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-600 font-bold mb-1">Status do Voo</label>
+                            <select
+                              value={fStatus}
+                              onChange={(e) => setFStatus(e.target.value)}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                            >
+                              <option value="Confirmado">Confirmado</option>
+                              <option value="Finalizado">Finalizado</option>
+                              <option value="Atrasado">Atrasado</option>
+                              <option value="Cancelado">Cancelado</option>
+                            </select>
+                          </div>
+
+                          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                            <button
+                              type="button"
+                              onClick={() => setShowAddFlightModal(false)}
+                              className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition shadow-xs"
+                            >
+                              {editingFlight ? "Salvar Alterações" : "Adicionar Trecho"}
+                            </button>
+                          </div>
+                        </form>
+                      </div>
                     </div>
                   )}
                 </div>

@@ -775,9 +775,9 @@ export default function App() {
             setActiveItineraryId(matched.id);
             localStorage.setItem("meu_agente_active_itinerary_id", String(matched.id));
 
-            // Automatically toggle isTravelerMode based on active itinerary ownership
+            // Automatically toggle isTravelerMode based on session type
             const isOwner = currentUser && matched.ownerId === currentUser.id;
-            const updatedIsTravelerMode = token === "traveler-session" || !isOwner;
+            const updatedIsTravelerMode = token === "traveler-session";
             
             if (isTravelerMode !== updatedIsTravelerMode) {
               setIsTravelerMode(updatedIsTravelerMode);
@@ -1821,9 +1821,9 @@ export default function App() {
     // 2. Load next itinerary data
     const nextIt = itineraries.find(it => it.id === nextId);
 
-    // Automatically toggle isTravelerMode based on next itinerary ownership
+    // Automatically toggle isTravelerMode based on session type
     const isOwner = currentUser && nextIt?.ownerId === currentUser.id;
-    const updatedIsTravelerMode = token === "traveler-session" || !isOwner;
+    const updatedIsTravelerMode = token === "traveler-session";
     
     if (isTravelerMode !== updatedIsTravelerMode) {
       setIsTravelerMode(updatedIsTravelerMode);
@@ -2638,6 +2638,8 @@ export default function App() {
               onRemoveDestination={handleRemoveDestination}
               flights={flights}
               onRemoveFlight={handleRemoveFlight}
+              onAddFlight={handleAddFlight}
+              onUpdateFlight={handleUpdateFlight}
               documents={documents}
               onRemoveDocument={handleRemoveDocument}
               currentUser={currentUser}
