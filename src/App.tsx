@@ -1072,9 +1072,22 @@ export default function App() {
 
   const handleUpdateFlight = (updatedFlight: FlightInfo) => {
     logTransaction("Alterado", "Voo", updatedFlight.id, `${updatedFlight.airline} (${updatedFlight.flightCode})`);
-    setFlights((prev) =>
-      prev.map((f) => (f.id === updatedFlight.id ? updatedFlight : f))
-    );
+    setFlights((prev) => {
+      const updated = prev.map((f) => (f.id === updatedFlight.id ? updatedFlight : f));
+      const payload = {
+        destinations,
+        costs,
+        costCategories,
+        travelers,
+        documents,
+        flights: updated,
+        generalTips,
+        notifications,
+        transactionLogs
+      };
+      saveCurrentItineraryToStore(activeItineraryId, payload);
+      return updated;
+    });
   };
 
   const handleAddDestination = (dest: Omit<Destination, "id" | "days">) => {
@@ -1131,7 +1144,22 @@ export default function App() {
   const handleAddFlight = (item: Omit<FlightInfo, "id">) => {
     const newId = `f-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     logTransaction("Adicionado", "Voo", newId, `${item.airline} ${item.flightCode}: ${item.departureCity} -> ${item.arrivalCity}`);
-    setFlights((prev) => [...prev, { ...item, id: newId, createdByEmail: currentUser?.email || "" }]);
+    setFlights((prev) => {
+      const updated = [...prev, { ...item, id: newId, createdByEmail: currentUser?.email || "" }];
+      const payload = {
+        destinations,
+        costs,
+        costCategories,
+        travelers,
+        documents,
+        flights: updated,
+        generalTips,
+        notifications,
+        transactionLogs
+      };
+      saveCurrentItineraryToStore(activeItineraryId, payload);
+      return updated;
+    });
   };
 
   const handleRemoveFlight = (id: string) => {
@@ -1139,7 +1167,22 @@ export default function App() {
     const desc = target ? `${target.airline} (${target.flightCode})` : id;
     logTransaction("Excluído", "Voo", id, desc);
     // Soft delete: mark as isDeleted instead of filtering out
-    setFlights((prev) => prev.map((f) => f.id === id ? { ...f, isDeleted: true } : f));
+    setFlights((prev) => {
+      const updated = prev.map((f) => f.id === id ? { ...f, isDeleted: true } : f);
+      const payload = {
+        destinations,
+        costs,
+        costCategories,
+        travelers,
+        documents,
+        flights: updated,
+        generalTips,
+        notifications,
+        transactionLogs
+      };
+      saveCurrentItineraryToStore(activeItineraryId, payload);
+      return updated;
+    });
   };
 
   // Itinerary Modifications (Add/Remove daily activities)

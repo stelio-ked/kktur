@@ -929,9 +929,28 @@ export default function OverviewTab({
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[9px] font-black uppercase text-slate-550 bg-slate-200/65 px-2 py-0.5 rounded-md">
-                      {flight.status}
-                    </span>
+                    {!isReadOnly ? (
+                      <select
+                        value={flight.status}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          onUpdateFlight({ ...flight, status: e.target.value as any });
+                        }}
+                        className="text-[9px] font-black uppercase text-slate-700 bg-slate-200/80 hover:bg-slate-300/80 px-2 py-0.5 rounded-md cursor-pointer focus:outline-none"
+                      >
+                        <option value="Finalizado">Finalizado</option>
+                        <option value="Confirmado">Confirmado</option>
+                        <option value="Check-in aberto">Check-in aberto</option>
+                        <option value="Em voo">Em voo</option>
+                        <option value="Atrasado">Atrasado</option>
+                        <option value="Cancelado">Cancelado</option>
+                      </select>
+                    ) : (
+                      <span className="text-[9px] font-black uppercase text-slate-550 bg-slate-200/65 px-2 py-0.5 rounded-md">
+                        {flight.status}
+                      </span>
+                    )}
                     <ChevronDown className="w-4 h-4 text-slate-400" />
                   </div>
                 </div>
@@ -985,9 +1004,31 @@ export default function OverviewTab({
                       <Plane className="w-3 h-3 text-indigo-600 transform rotate-45" />
                     </div>
                   </div>
-                  <span className="text-[9px] sm:text-[10px] text-green-700 bg-green-50 px-1.5 py-0.5 rounded font-black uppercase shrink-0">
-                    {flight.status}
-                  </span>
+                  {!isReadOnly ? (
+                    <select
+                      value={flight.status}
+                      onChange={(e) => onUpdateFlight({ ...flight, status: e.target.value as any })}
+                      className={`text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded font-black uppercase shrink-0 cursor-pointer focus:outline-none transition ${
+                        flight.status === "Finalizado" ? "text-slate-600 bg-slate-200/70 border border-slate-300" :
+                        flight.status === "Check-in aberto" ? "text-emerald-700 bg-emerald-50 border border-emerald-200" :
+                        flight.status === "Em voo" ? "text-blue-700 bg-blue-50 border border-blue-200" :
+                        flight.status === "Atrasado" ? "text-amber-700 bg-amber-50 border border-amber-200" :
+                        flight.status === "Cancelado" ? "text-rose-700 bg-rose-50 border border-rose-200" :
+                        "text-emerald-700 bg-emerald-50 border border-emerald-200"
+                      }`}
+                    >
+                      <option value="Confirmado">Confirmado</option>
+                      <option value="Check-in aberto">Check-in aberto</option>
+                      <option value="Em voo">Em voo</option>
+                      <option value="Atrasado">Atrasado</option>
+                      <option value="Finalizado">Finalizado</option>
+                      <option value="Cancelado">Cancelado</option>
+                    </select>
+                  ) : (
+                    <span className="text-[9px] sm:text-[10px] text-green-700 bg-green-50 px-1.5 py-0.5 rounded font-black uppercase shrink-0">
+                      {flight.status}
+                    </span>
+                  )}
                 </div>
 
                 <div className="text-right">

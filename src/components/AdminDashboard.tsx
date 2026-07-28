@@ -865,7 +865,29 @@ export default function AdminDashboard({
                             <div className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
                               <span>{flight.airline}</span>
                               <span className="px-1.5 py-0.5 rounded bg-slate-200 text-[10px] font-bold">{flight.flightCode}</span>
-                              <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[9px] font-extrabold uppercase">{flight.status}</span>
+                              <select
+                                value={flight.status}
+                                onChange={(e) => {
+                                  if (onUpdateFlight) {
+                                    onUpdateFlight({ ...flight, status: e.target.value as any });
+                                  }
+                                }}
+                                className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border cursor-pointer focus:outline-none transition ${
+                                  flight.status === "Finalizado" ? "bg-slate-200/80 text-slate-700 border-slate-300" :
+                                  flight.status === "Check-in aberto" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                                  flight.status === "Em voo" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                                  flight.status === "Atrasado" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                                  flight.status === "Cancelado" ? "bg-rose-50 text-rose-700 border-rose-200" :
+                                  "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                }`}
+                              >
+                                <option value="Confirmado">Confirmado</option>
+                                <option value="Check-in aberto">Check-in aberto</option>
+                                <option value="Em voo">Em voo</option>
+                                <option value="Atrasado">Atrasado</option>
+                                <option value="Finalizado">Finalizado</option>
+                                <option value="Cancelado">Cancelado</option>
+                              </select>
                             </div>
                             <div className="text-[11px] text-slate-600 mt-1">
                               <span className="font-extrabold">{flight.departureCity} ({flight.departureCode})</span> → <span className="font-extrabold">{flight.arrivalCity} ({flight.arrivalCode})</span>
@@ -1103,8 +1125,10 @@ export default function AdminDashboard({
                               className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                             >
                               <option value="Confirmado">Confirmado</option>
-                              <option value="Finalizado">Finalizado</option>
+                              <option value="Check-in aberto">Check-in aberto</option>
+                              <option value="Em voo">Em voo</option>
                               <option value="Atrasado">Atrasado</option>
+                              <option value="Finalizado">Finalizado</option>
                               <option value="Cancelado">Cancelado</option>
                             </select>
                           </div>
