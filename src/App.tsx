@@ -1174,6 +1174,36 @@ export default function App() {
     });
   };
 
+  const handleRateDestination = (destinationId: string, rating: number) => {
+    const userKey = currentUser?.email?.toLowerCase().trim() || currentUser?.name || "anonymous";
+    setDestinations((prev) => {
+      const updated = prev.map((d) => {
+        if (d.id === destinationId) {
+          const currentRatings = d.ratings || {};
+          const newRatings = { ...currentRatings, [userKey]: rating };
+          return { ...d, ratings: newRatings };
+        }
+        return d;
+      });
+
+      const payload = {
+        destinations: updated,
+        costs,
+        costCategories,
+        travelers,
+        documents,
+        flights,
+        generalTips,
+        notifications,
+        transactionLogs
+      };
+      if (activeItineraryId) {
+        saveCurrentItineraryToStore(activeItineraryId, payload);
+      }
+      return updated;
+    });
+  };
+
   const handleAddFlight = (item: Omit<FlightInfo, "id">) => {
     const newId = `f-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     logTransaction("Adicionado", "Voo", newId, `${item.airline} ${item.flightCode}: ${item.departureCity} -> ${item.arrivalCity}`);
@@ -2580,6 +2610,7 @@ export default function App() {
                   currentUser={currentUser}
                   onEditDestination={handleEditDestination}
                   onRemoveDestination={handleRemoveDestination}
+                  onRateDestination={handleRateDestination}
                   onAddNotification={(alertObj) => {
                     const newAlert = {
                       id: `alert-${Date.now()}`,

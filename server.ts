@@ -62,6 +62,14 @@ function mapItineraryFromDb(itinerary: any): any {
         checkOutTime: d.checkOutTime,
         checkInDate: d.checkInDate,
         notes: d.notes,
+        ratings: (() => {
+          if (!d.ratings) return {};
+          try {
+            return typeof d.ratings === 'string' ? JSON.parse(d.ratings) : d.ratings;
+          } catch {
+            return {};
+          }
+        })(),
         days: (d.days || []).map((day: any) => ({
           id: strip(day.id),
           dayNumber: day.dayNumber,
@@ -228,6 +236,7 @@ async function saveItineraryData(
         checkOutTime: d.checkOutTime || '',
         checkInDate: d.checkInDate || '',
         notes: d.notes || '',
+        ratings: d.ratings ? (typeof d.ratings === 'object' ? JSON.stringify(d.ratings) : String(d.ratings)) : '',
         createdByEmail: d.createdByEmail || null
       });
     });

@@ -73,6 +73,7 @@ export interface Destination {
   checkOutTime?: string; // e.g. "11:00"
   checkInDate?: string; // e.g. "2026-07-01T15:00:00"
   notes?: string;
+  ratings?: Record<string, number>; // key: user email or traveler name -> rating 1..5
   days: ItineraryDay[];
   createdByEmail?: string;
 }

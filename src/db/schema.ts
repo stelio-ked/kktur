@@ -63,6 +63,7 @@ export const destinations = pgTable("destinations", {
   checkOutTime: text("check_out_time"),
   checkInDate: text("check_in_date"),
   notes: text("notes"),
+  ratings: text("ratings"),
   createdByEmail: text("created_by_email"),
 });
 

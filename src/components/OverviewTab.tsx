@@ -55,6 +55,7 @@ interface OverviewTabProps {
   isReadOnly?: boolean;
   onEditDestination?: (id: string, updatedDest: Omit<Destination, "id" | "days">) => void;
   onRemoveDestination?: (id: string) => void;
+  onRateDestination?: (destinationId: string, rating: number) => void;
   onAddNotification?: (notification: { title: string; description: string; type: "gate" | "schedule" | "important" | "system" }) => void;
   currentUser?: { email?: string; name?: string; isTraveler?: boolean } | null;
 }
@@ -95,6 +96,7 @@ export default function OverviewTab({
   isReadOnly = false,
   onEditDestination,
   onRemoveDestination,
+  onRateDestination,
   onAddNotification,
   currentUser,
 }: OverviewTabProps) {
@@ -801,8 +803,16 @@ export default function OverviewTab({
         </div>
       </div>
 
-      {/* COUNTDOWN TIMER FOR TRIP EXPECTATION */}
-      <TripCountdown destinations={destinations} />
+      {/* COUNTDOWN / TRIP HIGHLIGHT BANNER */}
+      <TripCountdown 
+        destinations={destinations}
+        flights={flights}
+        travelers={travelers}
+        costs={costs}
+        title={title}
+        currentUser={currentUser}
+        onRateDestination={onRateDestination}
+      />
 
       {/* QUICK FINANCIAL STATS GRID */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
