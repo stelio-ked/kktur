@@ -1763,11 +1763,12 @@ export default function App() {
     // 1. Save in local cache
     safeSetLocalStorage(`meu_agente_itinerary_data_${itId}`, JSON.stringify(statesPayload));
     
-    // 2. If online and logged in (numerical ID or we can detect cloud sync)
-    if (!isOffline && token && typeof itId === "number") {
+    // 2. If online and logged in (numerical ID or string database ID)
+    const isServerId = itId !== null && itId !== undefined && !String(itId).startsWith("local-");
+    if (!isOffline && token && isServerId) {
       try {
-        const titleVal = itineraries.find(it => it.id === itId)?.title || "Minha Viagem";
-        await fetch(`/api/itineraries/${itId}`, {
+        const titleVal = itineraries.find(it => String(it.id) === String(itId))?.title || "Minha Viagem";
+        await fetch(`/api/itineraries/${encodeURIComponent(itId)}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -2024,11 +2025,12 @@ export default function App() {
   };
 
   const handleRenameItinerary = async (id: string | number, newTitle: string) => {
-    setItineraries(prev => prev.map(it => it.id === id ? { ...it, title: newTitle } : it));
+    setItineraries(prev => prev.map(it => String(it.id) === String(id) ? { ...it, title: newTitle } : it));
 
-    if (!isOffline && token && typeof id === "number") {
+    const isServerId = id !== null && id !== undefined && !String(id).startsWith("local-");
+    if (!isOffline && token && isServerId) {
       try {
-        await fetch(`/api/itineraries/${id}`, {
+        await fetch(`/api/itineraries/${encodeURIComponent(id)}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -2047,11 +2049,11 @@ export default function App() {
   const handleDeleteItinerary = async (id: string | number) => {
     if (itineraries.length <= 1) return;
 
-    const filtered = itineraries.filter(it => it.id !== id);
+    const filtered = itineraries.filter(it => String(it.id) !== String(id));
     setItineraries(filtered);
 
     // If we deleted the active one, switch to another
-    if (id === activeItineraryId) {
+    if (String(id) === String(activeItineraryId)) {
       const remaining = filtered[0];
       setActiveItineraryId(remaining.id);
       lastLoadedItineraryIdRef.current = remaining.id;
@@ -2086,9 +2088,10 @@ export default function App() {
 
     localStorage.removeItem(`meu_agente_itinerary_data_${id}`);
 
-    if (!isOffline && token && typeof id === "number") {
+    const isServerId = id !== null && id !== undefined && !String(id).startsWith("local-");
+    if (!isOffline && token && isServerId) {
       try {
-        await fetch(`/api/itineraries/${id}`, {
+        await fetch(`/api/itineraries/${encodeURIComponent(id)}`, {
           method: "DELETE",
           headers: {
             "Authorization": `Bearer ${token}`
