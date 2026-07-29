@@ -726,13 +726,13 @@ async function restoreItinerary45IfNeeded() {
   try {
     const itin45 = await db.query.itineraries.findFirst({
       where: eq(itineraries.id, 45),
-      with: { travelers: true, destinations: true }
+      with: { travelers: true, destinations: true, flights: true }
     });
     if (!itin45) return;
 
-    // Check if destinations or travelers are incomplete/missing
-    if (!itin45.travelers || itin45.travelers.length < 8 || !itin45.destinations || itin45.destinations.length < 2) {
-      console.log("Restaurando roteiro de cidades completo e viajantes para a viagem 45 (Copa EUA 🇺🇸 2026)...");
+    // Check if destinations, travelers or flights are incomplete/missing
+    if (!itin45.travelers || itin45.travelers.length < 8 || !itin45.destinations || itin45.destinations.length < 2 || !itin45.flights || itin45.flights.length < 10) {
+      console.log("Restaurando roteiro completo de cidades, viajantes e todos os 13 voos para a viagem 45 (Copa EUA 🇺🇸 2026)...");
 
       const restorationPayload = {
         travelers: [
@@ -754,6 +754,11 @@ async function restoreItinerary45IfNeeded() {
       };
 
       await db.transaction(async (tx) => {
+        const existingF = await tx.select().from(flights).where(eq(flights.itineraryId, 45));
+        if (existingF.length > 0) {
+          const existingFIds = existingF.map(f => f.id);
+          await tx.delete(flightPassengers).where(inArray(flightPassengers.flightId, existingFIds));
+        }
         await tx.delete(travelers).where(eq(travelers.itineraryId, 45));
         await tx.delete(destinations).where(eq(destinations.itineraryId, 45));
         await tx.delete(costs).where(eq(costs.itineraryId, 45));
@@ -765,7 +770,7 @@ async function restoreItinerary45IfNeeded() {
         await saveItineraryData(tx, 45, restorationPayload);
       });
 
-      console.log("Viagem 45 restaurada com sucesso com todo o roteiro de cidades e membros!");
+      console.log("Viagem 45 restaurada com sucesso com todo o roteiro de cidades, membros e 13 voos!");
     }
   } catch (err) {
     console.error("Erro ao restaurar itinerário 45:", err);
