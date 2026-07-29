@@ -9,7 +9,8 @@ import {
   costs, costCategories, documents, flights, generalTips, notifications, transactionLogs, flightPassengers,
   chatMessages, accessLogs, nearbyPlaces, apiUsageLogs
 } from "./src/db/schema.js";
-import { eq, inArray, and, or, sql } from "drizzle-orm";
+import { INITIAL_DESTINATIONS, INITIAL_COSTS, INITIAL_COST_CATEGORIES, INITIAL_FLIGHTS, INITIAL_DOCUMENTS, INITIAL_TIPS } from "./src/data/defaultData.js";
+import { eq, inArray, and, or, sql, isNotNull } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
@@ -720,11 +721,63 @@ const authMiddleware = (req: any, res: any, next: any) => {
 
 const typingParticipants: Record<number, Record<string, number>> = {};
 
+async function restoreItinerary45IfNeeded() {
+  if (!db) return;
+  try {
+    const itin45 = await db.query.itineraries.findFirst({
+      where: eq(itineraries.id, 45),
+      with: { travelers: true, destinations: true }
+    });
+    if (!itin45) return;
+
+    // Check if destinations or travelers are incomplete/missing
+    if (!itin45.travelers || itin45.travelers.length < 8 || !itin45.destinations || itin45.destinations.length < 2) {
+      console.log("Restaurando roteiro de cidades completo e viajantes para a viagem 45 (Copa EUA 🇺🇸 2026)...");
+
+      const restorationPayload = {
+        travelers: [
+          { id: "t-1", name: "Theo Ked", role: "Organizador", email: "theoked25@gmail.com" },
+          { id: "t-2", name: "Karoll Ked", role: "Viajante", email: "karollineferreiraked@gmail.com" },
+          { id: "t-3", name: "Gabi Ked", role: "Viajante", email: "gabiferreiraked@gmail.com" },
+          { id: "t-4", name: "Lelê Ked", role: "Viajante", email: "leticiaferreiraked@gmail.com" },
+          { id: "t-5", name: "César Ferreira", role: "Viajante", email: "carloscesarferreira53@gmail.com" },
+          { id: "t-6", name: "Rogéria Ferreira", role: "Viajante", email: "rogeriaprof@gmail.com" },
+          { id: "t-7", name: "Fabrício Ferreira", role: "Viajante", email: "fabricioferrmed@hotmail.com" },
+          { id: "t-8", name: "Neusa Chucre", role: "Viajante", email: "neusachucre2@gmail.com" }
+        ],
+        destinations: INITIAL_DESTINATIONS,
+        costs: INITIAL_COSTS,
+        costCategories: INITIAL_COST_CATEGORIES,
+        flights: INITIAL_FLIGHTS,
+        documents: INITIAL_DOCUMENTS,
+        generalTips: INITIAL_TIPS
+      };
+
+      await db.transaction(async (tx) => {
+        await tx.delete(travelers).where(eq(travelers.itineraryId, 45));
+        await tx.delete(destinations).where(eq(destinations.itineraryId, 45));
+        await tx.delete(costs).where(eq(costs.itineraryId, 45));
+        await tx.delete(costCategories).where(eq(costCategories.itineraryId, 45));
+        await tx.delete(documents).where(eq(documents.itineraryId, 45));
+        await tx.delete(flights).where(eq(flights.itineraryId, 45));
+        await tx.delete(generalTips).where(eq(generalTips.itineraryId, 45));
+
+        await saveItineraryData(tx, 45, restorationPayload);
+      });
+
+      console.log("Viagem 45 restaurada com sucesso com todo o roteiro de cidades e membros!");
+    }
+  } catch (err) {
+    console.error("Erro ao restaurar itinerário 45:", err);
+  }
+}
+
 async function startServer() {
   if (db) {
     try {
       await db.execute(sql`ALTER TABLE "destinations" ADD COLUMN IF NOT EXISTS "ratings" text;`);
       console.log("Database schema check complete: 'destinations.ratings' column verified.");
+      await restoreItinerary45IfNeeded();
     } catch (err) {
       console.error("Error ensuring database schema columns:", err);
     }
@@ -1173,21 +1226,31 @@ async function startServer() {
   app.get("/api/itineraries", authMiddleware, async (req: any, res) => {
     if (!db) return res.status(503).json({ error: "No DB configuration." });
     try {
-      // Find itineraries where the user is listed as a traveler
-      const cleanEmail = req.user.email.trim().toLowerCase();
-      const linkedTravelers = await db.select({ itineraryId: travelers.itineraryId })
-        .from(travelers)
-        .where(eq(sql`LOWER(TRIM(${travelers.email}))`, cleanEmail));
-      const travelerItineraryIds = linkedTravelers.map((t) => t.itineraryId);
+      // Find itineraries where the user is listed as a traveler or owner
+      const cleanEmail = (req.user?.email || "").trim().toLowerCase();
+      let travelerItineraryIds: number[] = [];
+
+      if (cleanEmail) {
+        const linkedTravelers = await db.select({ itineraryId: travelers.itineraryId })
+          .from(travelers)
+          .where(and(
+            isNotNull(travelers.email),
+            eq(sql`LOWER(TRIM(${travelers.email}))`, cleanEmail)
+          ));
+        travelerItineraryIds = Array.from(new Set(linkedTravelers.map((t) => t.itineraryId)));
+      }
 
       let whereClause;
       if (travelerItineraryIds.length > 0) {
-        whereClause = or(eq(itineraries.ownerId, req.user.id), inArray(itineraries.id, travelerItineraryIds));
+        whereClause = or(
+          eq(itineraries.ownerId, req.user.id),
+          inArray(itineraries.id, travelerItineraryIds)
+        );
       } else {
         whereClause = eq(itineraries.ownerId, req.user.id);
       }
 
-      // Instead of an advanced raw join, fetch all required entities using separate queries or a single relational query
+      // Query database for all matching itineraries
       const dbItineraries = await db.query.itineraries.findMany({
         where: whereClause,
         with: {
@@ -1318,6 +1381,21 @@ async function startServer() {
         await tx.update(itineraries).set(updateData).where(eq(itineraries.id, itineraryId));
 
       if (data) {
+        // Guard against accidental empty overwrite if client state was not loaded or is empty
+        const isPayloadEmpty = (!data.destinations || data.destinations.length === 0) &&
+          (!data.flights || data.flights.length === 0) &&
+          (!data.costs || data.costs.length === 0) &&
+          (!data.travelers || data.travelers.length <= 1);
+
+        if (isPayloadEmpty) {
+          const currentDestinations = await db.select().from(destinations).where(eq(destinations.itineraryId, itineraryId));
+          const currentTravelers = await db.select().from(travelers).where(eq(travelers.itineraryId, itineraryId));
+          if (currentDestinations.length > 0 || currentTravelers.length > 1) {
+            console.warn(`[PUT /api/itineraries/${itineraryId}] Ignorando salvamento de payload vazio para proteger dados existentes.`);
+            return res.json({ success: true, warning: "Payload vazio ignorado para preservar dados na nuvem." });
+          }
+        }
+
         // Load existing records to preserve real files/attachments if they are optimized/hidden on the client side
         let existingFlights: any[] = [];
         let existingDocuments: any[] = [];

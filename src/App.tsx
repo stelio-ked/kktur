@@ -2249,6 +2249,12 @@ export default function App() {
       return;
     }
 
+    // Safety guard: Do not auto-sync empty state to cloud if destinations/travelers are uninitialized
+    if (destinations.length === 0 && flights.length === 0 && costs.length === 0 && travelers.length <= 1) {
+      console.warn("Autosave pulado: estado local vazio ou não inicializado para evitar sobrescrever a viagem.");
+      return;
+    }
+
     const timer = setTimeout(async () => {
       try {
         const payload = getCurrentStatePayload();
