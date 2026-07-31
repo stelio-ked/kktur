@@ -566,7 +566,13 @@ export default function App() {
 
         if (res.ok) {
           const text = await res.text();
-          let data = JSON.parse(text);
+          let data: any = [];
+          try {
+            data = JSON.parse(text);
+          } catch (jsonErr) {
+            console.warn("Background chat poll received non-JSON response:", text.substring(0, 50));
+            return;
+          }
           if (data && typeof data === "object" && !Array.isArray(data)) {
             data = data.messages || [];
           }
