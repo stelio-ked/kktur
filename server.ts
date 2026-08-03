@@ -16,6 +16,10 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { GoogleGenAI, Type } from "@google/genai";
 
+if (process.env.NODE_ENV === "production" && (!process.env.JWT_SECRET || process.env.JWT_SECRET === "meu-secret-super-seguro-dev-only")) {
+  console.error("FATAL: JWT_SECRET não configurado ou inseguro em ambiente de produção.");
+  process.exit(1);
+}
 const JWT_SECRET = process.env.JWT_SECRET || "meu-secret-super-seguro-dev-only";
 
 const formatDbError = (err: any): string => {
@@ -634,7 +638,7 @@ async function generateContentWithRetry(params: {
     }
   }
 
-  const fallbackModels = ["gemini-3.1-flash-lite", "gemini-3.1-pro-preview", "gemini-flash-latest"];
+  const fallbackModels = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
   
   for (const fallbackModel of fallbackModels) {
     if (params.model === fallbackModel) continue; // Skip if already tried
@@ -707,6 +711,9 @@ const authMiddleware = (req: any, res: any, next: any) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "Token não fornecido" });
   if (token === "traveler-session") {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(401).json({ error: "Sessão estática desativada em produção" });
+    }
     req.user = { id: 0, email: "traveler@viagem.com", name: "Viajante" };
     return next();
   }
@@ -935,8 +942,11 @@ async function startServer() {
     }
   });
 
-  // Endpoint to fetch simulated emails for a user
+  // Endpoint to fetch simulated emails for a user (Dev only)
   app.get("/api/dev/last-emails", async (req, res) => {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(403).json({ error: "Endpoint desativado em produção." });
+    }
     try {
       const { email } = req.query;
       if (!email) {
@@ -951,8 +961,11 @@ async function startServer() {
     }
   });
 
-  // Endpoint to delete a simulated email (once read or clicked)
+  // Endpoint to delete a simulated email (once read or clicked) (Dev only)
   app.delete("/api/dev/last-emails/:id", async (req, res) => {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(403).json({ error: "Endpoint desativado em produção." });
+    }
     try {
       const { id } = req.params;
       const index = simulatedEmails.findIndex((m) => m.id === id);
