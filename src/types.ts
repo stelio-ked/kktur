@@ -6,6 +6,7 @@ export interface Traveler {
   checkedActivities?: string;
   packingItems?: string;
   createdByEmail?: string;
+  isDeleted?: boolean;
 }
 
 export interface CostCategory {
@@ -28,6 +29,7 @@ export interface CostItem {
   createdByEmail?: string;
   receiptName?: string;
   receiptData?: string;
+  isDeleted?: boolean;
 }
 
 export interface Activity {
@@ -76,6 +78,7 @@ export interface Destination {
   ratings?: Record<string, number>; // key: user email or traveler name -> rating 1..5
   days: ItineraryDay[];
   createdByEmail?: string;
+  isDeleted?: boolean;
 }
 
 export interface TravelDocument {
@@ -90,6 +93,7 @@ export interface TravelDocument {
   notes?: string;
   uploadedAt: string;
   createdByEmail?: string;
+  isDeleted?: boolean;
 }
 
 export interface FlightPassenger {

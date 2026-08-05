@@ -930,6 +930,14 @@ export default function App() {
     safeSetLocalStorage("meu_agente_general_tips", JSON.stringify(generalTips));
   }, [generalTips]);
 
+  // ── Derived arrays: only active (non-deleted) items for the normal UI ──
+  const activeTravelers = travelers.filter(t => !t.isDeleted);
+  const activeCosts = costs.filter(c => !c.isDeleted);
+  const activeDestinations = destinations.filter(d => !d.isDeleted);
+  const activeDocuments = documents.filter(d => !d.isDeleted);
+  // flights already had soft-delete; keep same pattern
+  const activeFlights = flights.filter(f => !f.isDeleted);
+
   const logTransaction = (action: "Adicionado" | "Alterado" | "Excluído", itemType: string, itemId: string, itemDesc: string) => {
     const date = new Date();
     const formattedDate = date.toLocaleString("pt-BR", {
@@ -999,7 +1007,7 @@ export default function App() {
     const travelerName = traveler ? `${traveler.name} (${traveler.email || "Sem e-mail"})` : id;
     logTransaction("Excluído", "Membro", id, travelerName);
     setTravelers((prev) => {
-      const updated = prev.filter((t) => t.id !== id);
+      const updated = prev.map((t) => t.id === id ? { ...t, isDeleted: true } : t);
       const payload = {
         destinations,
         costs,
@@ -1026,6 +1034,28 @@ export default function App() {
       return updated;
     });
   };
+
+  const handleRestoreTraveler = (id: string) => {
+    const traveler = travelers.find((t) => t.id === id);
+    const travelerName = traveler ? `${traveler.name} (${traveler.email || "Sem e-mail"})` : id;
+    logTransaction("Alterado", "Membro", id, `Restaurado: ${travelerName}`);
+    setTravelers((prev) => {
+      const updated = prev.map((t) => t.id === id ? { ...t, isDeleted: false } : t);
+      const payload = {
+        destinations,
+        costs,
+        travelers: updated,
+        documents,
+        flights,
+        generalTips,
+        notifications,
+        transactionLogs
+      };
+      saveCurrentItineraryToStore(activeItineraryId, payload);
+      return updated;
+    });
+  };
+
 
   const handleEditTraveler = (id: string, name: string, email?: string, role?: string) => {
     const desc = `${name} (${email || "Sem e-mail"}) [Cargo: ${role || "Viajante"}]`;
@@ -1170,15 +1200,27 @@ export default function App() {
     const desc = target ? `${target.city}, ${target.state} (${target.country})` : id;
     logTransaction("Excluído", "Destino", id, desc);
     setDestinations((prev) => {
-      const filtered = prev.filter((d) => d.id !== id);
-      if (selectedDestinationId === id && filtered.length > 0) {
-        setSelectedDestinationId(filtered[0].id);
-      } else if (filtered.length === 0) {
+      const updated = prev.map((d) => d.id === id ? { ...d, isDeleted: true } : d);
+      const active = updated.filter(d => !d.isDeleted);
+      if (selectedDestinationId === id && active.length > 0) {
+        setSelectedDestinationId(active[0].id);
+      } else if (active.length === 0) {
         setSelectedDestinationId("");
       }
-      return filtered;
+      return updated;
     });
   };
+
+  const handleRestoreDestination = (id: string) => {
+    const target = destinations.find(d => d.id === id);
+    const desc = target ? `${target.city}, ${target.state} (${target.country})` : id;
+    logTransaction("Alterado", "Destino", id, `Restaurado: ${desc}`);
+    setDestinations((prev) => {
+      const updated = prev.map((d) => d.id === id ? { ...d, isDeleted: false } : d);
+      return updated;
+    });
+  };
+
 
   const handleRateDestination = (destinationId: string, rating: number) => {
     const userKey = currentUser?.email?.toLowerCase().trim() || currentUser?.name || "anonymous";
@@ -1253,6 +1295,29 @@ export default function App() {
       return updated;
     });
   };
+
+  const handleRestoreFlight = (id: string) => {
+    const target = flights.find(f => f.id === id);
+    const desc = target ? `${target.airline} (${target.flightCode})` : id;
+    logTransaction("Alterado", "Voo", id, `Restaurado: ${desc}`);
+    setFlights((prev) => {
+      const updated = prev.map((f) => f.id === id ? { ...f, isDeleted: false } : f);
+      const payload = {
+        destinations,
+        costs,
+        costCategories,
+        travelers,
+        documents,
+        flights: updated,
+        generalTips,
+        notifications,
+        transactionLogs
+      };
+      saveCurrentItineraryToStore(activeItineraryId, payload);
+      return updated;
+    });
+  };
+
 
   // Itinerary Modifications (Add/Remove daily activities)
   const handleAddActivity = (destId: string, dayId: string, item: Omit<any, "id"> & { targetDayId?: string }) => {
@@ -1581,8 +1646,16 @@ export default function App() {
     const target = costs.find(c => c.id === id);
     const desc = target ? `${target.description} (R$ ${target.totalCostBRL.toFixed(2)})` : id;
     logTransaction("Excluído", "Despesa", id, desc);
-    setCosts((prev) => prev.filter((c) => c.id !== id));
+    setCosts((prev) => prev.map((c) => c.id === id ? { ...c, isDeleted: true } : c));
   };
+
+  const handleRestoreCost = (id: string) => {
+    const target = costs.find(c => c.id === id);
+    const desc = target ? `${target.description} (R$ ${target.totalCostBRL.toFixed(2)})` : id;
+    logTransaction("Alterado", "Despesa", id, `Restaurado: ${desc}`);
+    setCosts((prev) => prev.map((c) => c.id === id ? { ...c, isDeleted: false } : c));
+  };
+
 
   const handleUpdateCostStatus = (id: string, status: CostItem["status"]) => {
     const target = costs.find(c => c.id === id);
@@ -1737,8 +1810,16 @@ export default function App() {
     const target = documents.find(d => d.id === id);
     const desc = target ? `${target.title} (${target.type}) para ${target.passengerName}` : id;
     logTransaction("Excluído", "Documento", id, desc);
-    setDocuments((prev) => prev.filter((d) => d.id !== id));
+    setDocuments((prev) => prev.map((d) => d.id === id ? { ...d, isDeleted: true } : d));
   };
+
+  const handleRestoreDocument = (id: string) => {
+    const target = documents.find(d => d.id === id);
+    const desc = target ? `${target.title} (${target.type}) para ${target.passengerName}` : id;
+    logTransaction("Alterado", "Documento", id, `Restaurado: ${desc}`);
+    setDocuments((prev) => prev.map((d) => d.id === id ? { ...d, isDeleted: false } : d));
+  };
+
 
   // General Tips Operations
   const handleAddTip = (tip: Omit<GeneralTip, "id">) => {
@@ -2363,7 +2444,7 @@ export default function App() {
         setIsOffline={setIsOffline}
         notificationPermission={notificationPermission}
         onRequestNotificationPermission={onRequestNotificationPermission}
-        travelers={travelers}
+        travelers={activeTravelers}
         onAddTraveler={handleAddTraveler}
         onRemoveTraveler={handleRemoveTraveler}
         onEditTraveler={handleEditTraveler}
@@ -2606,10 +2687,10 @@ export default function App() {
               {activeTab === "overview" && (
                 <OverviewTab 
                   title={itineraries.find(i => String(i.id) === String(activeItineraryId))?.title || "Sua Viagem"}
-                  destinations={destinations}
-                  flights={flights}
-                  travelers={travelers}
-                  costs={costs}
+                  destinations={activeDestinations}
+                  flights={activeFlights}
+                  travelers={activeTravelers}
+                  costs={activeCosts}
                   setActiveTab={setActiveTab}
                   setSelectedDestinationId={setSelectedDestinationId}
                   onUpdateFlight={handleUpdateFlight}
@@ -2637,8 +2718,8 @@ export default function App() {
 
               {activeTab === "itinerary" && (
                 <ItineraryTab 
-                  destinations={destinations}
-                  costs={costs}
+                  destinations={activeDestinations}
+                  costs={activeCosts}
                   onAddActivity={handleAddActivity}
                   onRemoveActivity={handleRemoveActivity}
                   onEditActivity={handleEditActivity}
@@ -2657,7 +2738,7 @@ export default function App() {
                   onRemoveDestination={handleRemoveDestination}
                   onAddDay={handleAddDay}
                   isReadOnly={isTravelerMode}
-                  travelers={travelers}
+                  travelers={activeTravelers}
                   onUpdateTravelerChecklists={handleUpdateTravelerChecklists}
                   currentUser={currentUser}
                   onOptimizeDayRoute={handleOptimizeDayRoute}
@@ -2667,10 +2748,10 @@ export default function App() {
 
               {activeTab === "costs" && (
                 <CostsTab 
-                  costs={costs}
+                  costs={activeCosts}
                   costCategories={costCategories}
                   setCostCategories={setCostCategories}
-                  travelers={travelers}
+                  travelers={activeTravelers}
                   onAddCost={handleAddCost}
                   onRemoveCost={handleRemoveCost}
                   onUpdateCostStatus={handleUpdateCostStatus}
@@ -2682,13 +2763,13 @@ export default function App() {
 
               {activeTab === "documents" && (
                 <DocumentsTab 
-                  documents={documents}
+                  documents={activeDocuments}
                   onAddDocument={handleAddDocument}
                   onRemoveDocument={handleRemoveDocument}
                   isOffline={isOffline}
-                  destinations={destinations}
-                  costs={costs}
-                  travelers={travelers}
+                  destinations={activeDestinations}
+                  costs={activeCosts}
+                  travelers={activeTravelers}
                   isReadOnly={isTravelerMode}
                   currentUser={currentUser}
                 />
@@ -2705,7 +2786,7 @@ export default function App() {
               {activeTab === "chat" && activeItineraryId && (() => {
                 let chatUserName = currentUser?.name || currentUser?.email || "Você";
                 if (currentUser?.email) {
-                  const matched = travelers.find(t => t.email?.toLowerCase().trim() === currentUser.email.toLowerCase().trim());
+                  const matched = activeTravelers.find(t => t.email?.toLowerCase().trim() === currentUser.email.toLowerCase().trim());
                   if (matched && matched.name) chatUserName = matched.name;
                 }
                 
@@ -2713,7 +2794,7 @@ export default function App() {
                   <ChatTab 
                     itineraryId={activeItineraryId}
                     currentUser={{ name: chatUserName, id: currentUser?.id || 1, email: currentUser?.email }}
-                    travelers={travelers}
+                    travelers={activeTravelers}
                   />
                 );
               })()}
@@ -2726,9 +2807,9 @@ export default function App() {
               isTravelerMode={isTravelerMode}
               currentUser={currentUser}
               isAdmin={isAdmin}
-              travelers={travelers}
-              destinations={destinations}
-              costs={costs}
+              travelers={activeTravelers}
+              destinations={activeDestinations}
+              costs={activeCosts}
               ecoMode={itineraries.find(it => it.id === activeItineraryId)?.ecoMode || false}
               onToggleEcoMode={async () => {
                 const currentEco = itineraries.find(it => it.id === activeItineraryId)?.ecoMode || false;
@@ -2755,23 +2836,29 @@ export default function App() {
             <AdminDashboard
               travelers={travelers}
               onRemoveTraveler={handleRemoveTraveler}
+              onRestoreTraveler={handleRestoreTraveler}
               onAddTraveler={handleAddTraveler}
               onEditTraveler={handleEditTraveler}
               costs={costs}
               onRemoveCost={handleRemoveCost}
+              onRestoreCost={handleRestoreCost}
               destinations={destinations}
               onRemoveDestination={handleRemoveDestination}
+              onRestoreDestination={handleRestoreDestination}
               flights={flights}
               onRemoveFlight={handleRemoveFlight}
+              onRestoreFlight={handleRestoreFlight}
               onAddFlight={handleAddFlight}
               onUpdateFlight={handleUpdateFlight}
               documents={documents}
               onRemoveDocument={handleRemoveDocument}
+              onRestoreDocument={handleRestoreDocument}
               currentUser={currentUser}
               transactionLogs={transactionLogs}
               itineraryId={activeItineraryId}
               token={token}
             />
+
           )}
 
         </div>
@@ -2781,7 +2868,7 @@ export default function App() {
       {/* COMPACT FOOTER FOOTPRINT */}
       <footer className="bg-slate-900 border-t border-slate-950 p-6 md:px-8 text-center text-xs text-slate-400 pb-20 md:pb-6">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-          <p>© 2026 KK TUR. Auxiliar Inteligente para {travelers.length} {travelers.length === 1 ? 'Viajante' : 'Viajantes'}.</p>
+          <p>© 2026 KK TUR. Auxiliar Inteligente para {activeTravelers.length} {activeTravelers.length === 1 ? 'Viajante' : 'Viajantes'}.</p>
           <div className="flex gap-4">
             <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Sincronizado</span>
             <span className="inline-flex items-center gap-1 text-indigo-400 font-bold">Local Host: 3000 Active</span>

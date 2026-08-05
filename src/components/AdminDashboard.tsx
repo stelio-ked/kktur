@@ -27,18 +27,23 @@ import { motion, AnimatePresence } from "motion/react";
 interface AdminDashboardProps {
   travelers: Traveler[];
   onRemoveTraveler: (id: string) => void;
+  onRestoreTraveler?: (id: string) => void;
   onAddTraveler?: (name: string, email?: string, role?: string) => void;
   onEditTraveler?: (id: string, name: string, email?: string, role?: string) => void;
   costs: CostItem[];
   onRemoveCost: (id: string) => void;
+  onRestoreCost?: (id: string) => void;
   destinations: Destination[];
   onRemoveDestination: (id: string) => void;
+  onRestoreDestination?: (id: string) => void;
   flights: FlightInfo[];
   onRemoveFlight: (id: string) => void;
+  onRestoreFlight?: (id: string) => void;
   onAddFlight?: (flight: Omit<FlightInfo, "id">) => void;
   onUpdateFlight?: (flight: FlightInfo) => void;
   documents: TravelDocument[];
   onRemoveDocument: (id: string) => void;
+  onRestoreDocument?: (id: string) => void;
   currentUser?: { email?: string; name?: string } | null;
   transactionLogs?: any[];
   itineraryId?: string | number;
@@ -50,18 +55,23 @@ type AdminTab = "travelers" | "costs" | "destinations" | "flights" | "documents"
 export default function AdminDashboard({
   travelers,
   onRemoveTraveler,
+  onRestoreTraveler,
   onAddTraveler,
   onEditTraveler,
   costs,
   onRemoveCost,
+  onRestoreCost,
   destinations,
   onRemoveDestination,
+  onRestoreDestination,
   flights,
   onRemoveFlight,
+  onRestoreFlight,
   onAddFlight,
   onUpdateFlight,
   documents,
   onRemoveDocument,
+  onRestoreDocument,
   currentUser,
   transactionLogs = [],
   itineraryId,
@@ -299,12 +309,13 @@ export default function AdminDashboard({
     setConfirmDeleteId(null);
   };
 
-  // Stats calculation
-  const totalTravelers = travelers.length;
-  const totalCostBRL = costs.reduce((sum, item) => sum + item.totalCostBRL, 0);
-  const totalDestinations = destinations.length;
-  const totalFlights = flights.length;
-  const totalDocuments = documents.length;
+  // Stats calculation (active items only)
+  const totalTravelers = travelers.filter(t => !t.isDeleted).length;
+  const totalCostBRL = costs.filter(c => !c.isDeleted).reduce((sum, item) => sum + item.totalCostBRL, 0);
+  const totalDestinations = destinations.filter(d => !d.isDeleted).length;
+  const totalFlights = flights.filter(f => !f.isDeleted).length;
+  const totalDocuments = documents.filter(d => !d.isDeleted).length;
+
 
   return (
     <div id="admin-dashboard-container" className="space-y-6">
@@ -606,6 +617,11 @@ export default function AdminDashboard({
                                     }`}>
                                       {traveler.role || "Viajante"}
                                     </span>
+                                    {traveler.isDeleted && (
+                                       <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-200">
+                                         Excluído
+                                       </span>
+                                     )}
                                   </div>
                                   <div className="text-[11px] text-slate-500 mt-0.5 truncate">{traveler.email || "E-mail não cadastrado"}</div>
                                   {traveler.createdByEmail && (
@@ -616,41 +632,55 @@ export default function AdminDashboard({
 
                               {/* Actions */}
                               <div className="flex items-center gap-1 shrink-0">
-                                {onEditTraveler && (
-                                  <button
-                                    onClick={() => handleStartEdit(traveler)}
-                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
-                                    title="Editar dados e cargo"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
+                                {traveler.isDeleted ? (
+                                   onRestoreTraveler && (
+                                     <button
+                                       onClick={() => onRestoreTraveler(traveler.id)}
+                                       className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
+                                       title="Restaurar este viajante"
+                                     >
+                                       Restaurar
+                                     </button>
+                                   )
+                                 ) : (
+                                   <>
+                                     {onEditTraveler && (
+                                       <button
+                                         onClick={() => handleStartEdit(traveler)}
+                                         className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                         title="Editar dados e cargo"
+                                       >
+                                         <Pencil className="w-3.5 h-3.5" />
+                                       </button>
+                                     )}
 
-                                {confirmDeleteId === traveler.id ? (
-                                  <div className="flex items-center gap-1.5 animate-pulse bg-white/85 p-1 rounded-lg border border-rose-200">
-                                    <span className="text-[9px] text-rose-600 font-black uppercase px-1">Excluir?</span>
-                                    <button 
-                                      onClick={() => handleExecuteDelete(traveler.id)}
-                                      className="px-2 py-1 bg-rose-600 text-white rounded-md text-[10px] font-bold hover:bg-rose-700 transition"
-                                    >
-                                      Sim
-                                    </button>
-                                    <button 
-                                      onClick={handleCancelDelete}
-                                      className="px-2 py-1 bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold hover:bg-slate-350 transition"
-                                    >
-                                      Não
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={() => handleTriggerDelete(traveler.id)}
-                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                    title="Excluir membro"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                )}
+                                     {confirmDeleteId === traveler.id ? (
+                                       <div className="flex items-center gap-1.5 animate-pulse bg-white/85 p-1 rounded-lg border border-rose-200">
+                                         <span className="text-[9px] text-rose-600 font-black uppercase px-1">Excluir?</span>
+                                         <button 
+                                           onClick={() => handleExecuteDelete(traveler.id)}
+                                           className="px-2 py-1 bg-rose-600 text-white rounded-md text-[10px] font-bold hover:bg-rose-700 transition"
+                                         >
+                                           Sim
+                                         </button>
+                                         <button 
+                                           onClick={handleCancelDelete}
+                                           className="px-2 py-1 bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold hover:bg-slate-350 transition"
+                                         >
+                                           Não
+                                         </button>
+                                       </div>
+                                     ) : (
+                                       <button
+                                         onClick={() => handleTriggerDelete(traveler.id)}
+                                         className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                         title="Excluir membro"
+                                       >
+                                         <Trash2 className="w-4 h-4" />
+                                       </button>
+                                     )}
+                                   </>
+                                 )}
                               </div>
                             </div>
                           )}
@@ -692,9 +722,16 @@ export default function AdminDashboard({
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-xs">
                           {filteredCosts.map((cost) => (
-                            <tr key={cost.id} className="hover:bg-indigo-50/20 transition-colors">
+                            <tr key={cost.id} className={`transition-colors ${cost.isDeleted ? "bg-rose-50/40 opacity-75" : "hover:bg-indigo-50/20"}`}>
                               <td className="p-3 pl-4 font-bold text-slate-800">
-                                {cost.description}
+                                <div className="flex items-center gap-1.5">
+                                  <span>{cost.description}</span>
+                                  {cost.isDeleted && (
+                                    <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-200">
+                                      Excluído
+                                    </span>
+                                  )}
+                                </div>
                                 {cost.notes && <div className="text-[10px] text-slate-450 font-normal">{cost.notes}</div>}
                               </td>
                               <td className="p-3 text-slate-500">
@@ -720,7 +757,17 @@ export default function AdminDashboard({
                                 {cost.createdByEmail || "Dono da Viagem"}
                               </td>
                               <td className="p-3 text-right">
-                                {confirmDeleteId === cost.id ? (
+                                {cost.isDeleted ? (
+                                  onRestoreCost && (
+                                    <button
+                                      onClick={() => onRestoreCost(cost.id)}
+                                      className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
+                                      title="Restaurar este custo"
+                                    >
+                                      Restaurar
+                                    </button>
+                                  )
+                                ) : confirmDeleteId === cost.id ? (
                                   <div className="inline-flex items-center gap-1.5 bg-white p-1 rounded-lg border border-rose-250 animate-pulse">
                                     <button 
                                       onClick={() => handleExecuteDelete(cost.id)}
@@ -738,7 +785,7 @@ export default function AdminDashboard({
                                 ) : (
                                   <button
                                     onClick={() => handleTriggerDelete(cost.id)}
-                                    className="p-1.5 text-slate-450 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                    className="p-1.5 text-slate-450 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                                     title="Excluir custo"
                                   >
                                     <Trash2 className="w-4 h-4" />
@@ -747,6 +794,7 @@ export default function AdminDashboard({
                               </td>
                             </tr>
                           ))}
+
                         </tbody>
                       </table>
                     </div>
@@ -775,10 +823,21 @@ export default function AdminDashboard({
                       {filteredDestinations.map((dest) => (
                         <div 
                           key={dest.id} 
-                          className="bg-slate-50 rounded-xl p-4 border border-slate-100 hover:border-slate-200 transition-colors flex justify-between gap-4"
+                          className={`rounded-xl p-4 border transition-colors flex justify-between gap-4 ${
+                            dest.isDeleted 
+                              ? "bg-rose-50/40 border-rose-200 opacity-75" 
+                              : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                          }`}
                         >
                           <div>
-                            <h3 className="font-extrabold text-slate-800 text-sm">{dest.city}, {dest.state}</h3>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-extrabold text-slate-800 text-sm">{dest.city}, {dest.state}</h3>
+                              {dest.isDeleted && (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-200">
+                                  Excluído
+                                </span>
+                              )}
+                            </div>
                             <p className="text-slate-500 text-xs font-medium">{dest.country} • {dest.dates}</p>
                             <div className="mt-2 text-[11px] text-slate-600 bg-white p-2 rounded-lg border border-slate-150 inline-block">
                               <span className="font-extrabold">Hospedagem:</span> {dest.hotelName}
@@ -789,7 +848,17 @@ export default function AdminDashboard({
                           </div>
 
                           <div className="self-center">
-                            {confirmDeleteId === dest.id ? (
+                            {dest.isDeleted ? (
+                              onRestoreDestination && (
+                                <button
+                                  onClick={() => onRestoreDestination(dest.id)}
+                                  className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                                  title="Restaurar este destino"
+                                >
+                                  Restaurar
+                                </button>
+                              )
+                            ) : confirmDeleteId === dest.id ? (
                               <div className="flex flex-col gap-1 bg-white p-2 rounded-lg border border-rose-200 animate-pulse text-center min-w-[100px]">
                                 <span className="text-[9px] text-rose-600 font-extrabold uppercase mb-1 block">Confirmar?</span>
                                 <div className="flex gap-1 justify-center">
@@ -810,7 +879,7 @@ export default function AdminDashboard({
                             ) : (
                               <button
                                 onClick={() => handleTriggerDelete(dest.id)}
-                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors border border-slate-150"
+                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors border border-slate-150 cursor-pointer"
                                 title="Excluir destino completo"
                               >
                                 <Trash2 className="w-4 h-4 text-rose-500" />
@@ -819,6 +888,7 @@ export default function AdminDashboard({
                           </div>
                         </div>
                       ))}
+
                     </div>
                   )}
                 </div>
@@ -859,12 +929,21 @@ export default function AdminDashboard({
                       {filteredFlights.map((flight) => (
                         <div 
                           key={flight.id} 
-                          className="bg-slate-50 rounded-xl p-4 border border-slate-100 hover:border-slate-200 transition-colors flex items-center justify-between gap-4"
+                          className={`rounded-xl p-4 border transition-colors flex items-center justify-between gap-4 ${
+                            flight.isDeleted 
+                              ? "bg-rose-50/40 border-rose-200 opacity-75" 
+                              : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                          }`}
                         >
                           <div>
                             <div className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
                               <span>{flight.airline}</span>
                               <span className="px-1.5 py-0.5 rounded bg-slate-200 text-[10px] font-bold">{flight.flightCode}</span>
+                              {flight.isDeleted && (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-200">
+                                  Excluído
+                                </span>
+                              )}
                               <select
                                 value={flight.status}
                                 onChange={(e) => {
@@ -907,36 +986,50 @@ export default function AdminDashboard({
                           </div>
 
                           <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => handleStartEditFlight(flight)}
-                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
-                              title="Editar trecho de voo"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                            {confirmDeleteId === flight.id ? (
-                              <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-rose-200 animate-pulse">
-                                <button 
-                                  onClick={() => handleExecuteDelete(flight.id)}
-                                  className="px-2 py-1 bg-rose-600 text-white rounded-md text-[9px] font-bold hover:bg-rose-700 transition"
+                            {flight.isDeleted ? (
+                              onRestoreFlight && (
+                                <button
+                                  onClick={() => onRestoreFlight(flight.id)}
+                                  className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
+                                  title="Restaurar este voo"
                                 >
-                                  Sim
+                                  Restaurar
                                 </button>
-                                <button 
-                                  onClick={handleCancelDelete}
-                                  className="px-1.5 py-1 bg-slate-200 text-slate-700 rounded-md text-[9px] font-bold hover:bg-slate-350 transition"
-                                >
-                                  Não
-                                </button>
-                              </div>
+                              )
                             ) : (
-                              <button
-                                onClick={() => handleTriggerDelete(flight.id)}
-                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                title="Excluir trecho de voo"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => handleStartEditFlight(flight)}
+                                  className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Editar trecho de voo"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                {confirmDeleteId === flight.id ? (
+                                  <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-rose-200 animate-pulse">
+                                    <button 
+                                      onClick={() => handleExecuteDelete(flight.id)}
+                                      className="px-2 py-1 bg-rose-600 text-white rounded-md text-[9px] font-bold hover:bg-rose-700 transition"
+                                    >
+                                      Sim
+                                    </button>
+                                    <button 
+                                      onClick={handleCancelDelete}
+                                      className="px-1.5 py-1 bg-slate-200 text-slate-700 rounded-md text-[9px] font-bold hover:bg-slate-350 transition"
+                                    >
+                                      Não
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => handleTriggerDelete(flight.id)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Excluir voo"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
@@ -948,6 +1041,7 @@ export default function AdminDashboard({
                   {showAddFlightModal && (
                     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
                       <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+
                         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                           <h3 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
                             <Plane className="w-5 h-5 text-indigo-600" />
@@ -1176,7 +1270,11 @@ export default function AdminDashboard({
                       {filteredDocuments.map((doc) => (
                         <div 
                           key={doc.id} 
-                          className="bg-slate-50 rounded-xl p-4 border border-slate-100 hover:border-slate-200 transition-colors flex items-center justify-between gap-4"
+                          className={`rounded-xl p-4 border transition-colors flex items-center justify-between gap-4 ${
+                            doc.isDeleted 
+                              ? "bg-rose-50/40 border-rose-200 opacity-75" 
+                              : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                          }`}
                         >
                           <div>
                             <div className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
@@ -1184,6 +1282,11 @@ export default function AdminDashboard({
                               <span className="px-1.5 py-0.5 rounded-full bg-slate-200 text-[9px] font-black uppercase">
                                 {doc.type}
                               </span>
+                              {doc.isDeleted && (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-200">
+                                  Excluído
+                                </span>
+                              )}
                             </div>
                             <p className="text-[11px] text-slate-505 mt-0.5">Pax: {doc.passengerName}</p>
                             <p className="text-[10px] text-slate-400 mt-1">Sincronizado em: {doc.uploadedAt}</p>
@@ -1193,7 +1296,17 @@ export default function AdminDashboard({
                           </div>
 
                           <div>
-                            {confirmDeleteId === doc.id ? (
+                            {doc.isDeleted ? (
+                              onRestoreDocument && (
+                                <button
+                                  onClick={() => onRestoreDocument(doc.id)}
+                                  className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
+                                  title="Restaurar este documento"
+                                >
+                                  Restaurar
+                                </button>
+                              )
+                            ) : confirmDeleteId === doc.id ? (
                               <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-rose-200 animate-pulse">
                                 <button 
                                   onClick={() => handleExecuteDelete(doc.id)}
@@ -1211,8 +1324,8 @@ export default function AdminDashboard({
                             ) : (
                               <button
                                 onClick={() => handleTriggerDelete(doc.id)}
-                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                title="Excluir documento permanentemente"
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Excluir documento"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
