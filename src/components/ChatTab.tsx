@@ -461,7 +461,13 @@ export default function ChatTab({
                       ) : msg.fileType?.startsWith('audio/') ? (
                         <audio src={msg.fileData} controls className="w-full max-w-[250px] scale-90 origin-left" />
                       ) : (
-                        <a href={msg.fileData} download={msg.fileName} className={`flex items-center gap-2 p-2 rounded-xl text-xs font-bold transition-all ${isMe ? 'bg-indigo-800 hover:bg-indigo-900 text-white' : 'bg-white hover:bg-slate-50 border border-slate-200'} `}>
+                        <a 
+                          href={msg.fileData} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          download={msg.fileName} 
+                          className={`flex items-center gap-2 p-2 rounded-xl text-xs font-bold transition-all ${isMe ? 'bg-indigo-800 hover:bg-indigo-900 text-white' : 'bg-white hover:bg-slate-50 border border-slate-200'} `}
+                        >
                           <FileIcon className="w-4 h-4 text-emerald-500" />
                           <span className="truncate max-w-[150px]">{msg.fileName}</span>
                         </a>
@@ -557,7 +563,7 @@ export default function ChatTab({
             ref={fileInputRef} 
             className="hidden" 
             onChange={handleFileChange}
-            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+            accept="image/*,video/*,audio/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
           />
           <button 
             disabled={isUploading}
