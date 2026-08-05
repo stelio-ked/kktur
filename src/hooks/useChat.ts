@@ -187,6 +187,60 @@ export function useChat(itineraryId: string | number, currentUserName?: string) 
 
   // ─── Enviar mensagem ──────────────────────────────────────────────────────
 
+  const uploadFile = async (file: File | Blob, customFileName?: string): Promise<{ fileUrl: string; fileName: string; fileType: string; fileSize: number } | null> => {
+    if (isLocal) {
+      // Local fallback: usa FileReader para gerar data URL como antes
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          resolve({
+            fileUrl: reader.result as string,
+            fileName: customFileName || (file as File).name || "attachment",
+            fileType: file.type,
+            fileSize: file.size
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    try {
+      const token = localStorage.getItem("auth_token");
+      setIsUploading(true);
+      setError(null);
+
+      const formData = new FormData();
+      formData.append("file", file, customFileName || (file as File).name);
+
+      const res = await fetch("/api/messages/upload", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        setError(errorData.error || "Erro ao fazer upload do arquivo.");
+        return null;
+      }
+
+      const data = await res.json();
+      return {
+        fileUrl: data.fileUrl,
+        fileName: data.fileName,
+        fileType: data.fileType,
+        fileSize: data.fileSize
+      };
+    } catch (e) {
+      setError("Erro de rede ao enviar arquivo.");
+      return null;
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const sendMessage = async (payload: any) => {
     if (isLocal) {
       const stored = localStorage.getItem(`meu_agente_chat_${itineraryId}`);
@@ -237,6 +291,7 @@ export function useChat(itineraryId: string | number, currentUserName?: string) 
     isUploading,
     error,
     sendMessage,
+    uploadFile,
     setTyping,
     fetchMessages,
   };

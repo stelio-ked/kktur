@@ -4,8 +4,33 @@ import { db } from "../db/index.js";
 import { chatMessages } from "../db/schema.js";
 import { authMiddleware, AuthRequest, JWT_SECRET } from "../middleware/auth.js";
 import jwt from "jsonwebtoken";
+import { chatUpload } from "../middleware/upload.js";
 
 const router = Router();
+
+// ─── Rota de Upload do Chat (Multipart) ──────────────────────────────────────
+
+router.post("/upload", authMiddleware, (req: AuthRequest, res: Response) => {
+  chatUpload.single("file")(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: "Nenhum arquivo enviado." });
+    }
+
+    // Retorna a URL estática para acessar o arquivo
+    const fileUrl = `/uploads/${req.file.filename}`;
+    res.json({
+      success: true,
+      fileUrl,
+      fileName: req.file.originalname,
+      fileType: req.file.mimetype,
+      fileSize: req.file.size
+    });
+  });
+});
+
 
 // ─── Estado em memória ────────────────────────────────────────────────────────
 

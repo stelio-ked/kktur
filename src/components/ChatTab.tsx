@@ -12,7 +12,7 @@ export default function ChatTab({
   currentUser: { name: string, id: number, email?: string },
   travelers?: Traveler[]
 }) {
-  const { messages, typingUsers, isUploading, error, sendMessage, setTyping } = useChat(itineraryId, currentUser.name);
+  const { messages, typingUsers, isUploading, error, sendMessage, uploadFile, setTyping } = useChat(itineraryId, currentUser.name);
   const [inputText, setInputText] = useState("");
   const [recipientName, setRecipientName] = useState<string>("Todos");
   
@@ -23,7 +23,7 @@ export default function ChatTab({
 
   // Pending attachment
   const [attachment, setAttachment] = useState<{
-    fileData: string;
+    fileData: string; // URL do arquivo estático (/uploads/...) ou Base64 em LocalMode
     fileName: string;
     fileType: string;
     fileSize: number;
@@ -99,7 +99,7 @@ export default function ChatTab({
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -108,16 +108,20 @@ export default function ChatTab({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setAttachment({
-        fileData: reader.result as string,
-        fileName: file.name,
-        fileType: file.type,
-        fileSize: file.size
-      });
-    };
-    reader.readAsDataURL(file);
+    try {
+      const res = await uploadFile(file);
+      if (res) {
+        setAttachment({
+          fileData: res.fileUrl,
+          fileName: res.fileName,
+          fileType: res.fileType,
+          fileSize: res.fileSize
+        });
+      }
+    } catch (err) {
+      console.error("Falha ao subir anexo:", err);
+      alert("Erro ao enviar anexo.");
+    }
   };
 
   const startRecording = async () => {
@@ -131,18 +135,22 @@ export default function ChatTab({
         if (event.data.size > 0) audioChunksRef.current.push(event.data);
       };
 
-      mediaRecorder.onstop = () => {
+      mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setAttachment({
-            fileData: reader.result as string,
-            fileName: "voice_message.webm",
-            fileType: "audio/webm",
-            fileSize: audioBlob.size
-          });
-        };
-        reader.readAsDataURL(audioBlob);
+        try {
+          const res = await uploadFile(audioBlob, "voice_message.webm");
+          if (res) {
+            setAttachment({
+              fileData: res.fileUrl,
+              fileName: res.fileName,
+              fileType: res.fileType,
+              fileSize: res.fileSize
+            });
+          }
+        } catch (err) {
+          console.error("Falha ao subir áudio gravado:", err);
+          alert("Erro ao processar gravação de voz.");
+        }
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -526,7 +534,14 @@ export default function ChatTab({
           )}
         </div>
 
-        {/* Attachment preview */}
+        {/* Attachment preview or Uploading state */}
+        {isUploading && !attachment && (
+          <div className="absolute -top-14 left-4 bg-white border border-indigo-100 rounded-xl px-3 py-2 flex items-center gap-2 shadow-sm text-xs font-bold text-indigo-700 animate-pulse">
+            <div className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+            <span>Enviando arquivo para o servidor...</span>
+          </div>
+        )}
+
         {attachment && (
           <div className="absolute -top-14 left-4 bg-white border border-slate-200 rounded-xl px-3 py-2 flex items-center gap-2 shadow-sm text-xs font-bold text-slate-700 animate-in fade-in slide-in-from-bottom-2">
             {attachment.fileType.startsWith('image/') ? <ImageIcon className="w-4 h-4 text-indigo-500" /> : <FileIcon className="w-4 h-4 text-emerald-500" />}

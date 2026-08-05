@@ -5,3 +5,4 @@ dist
 .env
 README.md
 package-lock.json
+uploads/

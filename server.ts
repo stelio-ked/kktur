@@ -71,6 +71,9 @@ async function startServer() {
   app.use("/api/gemini", aiRouter);
   app.use("/api", adminRouter);
 
+  // Servir arquivos de uploads locais
+  app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
   // Serve Frontend / Vite Middleware
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
