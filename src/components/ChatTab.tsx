@@ -362,70 +362,110 @@ export default function ChatTab({
           </div>
         )}
         
-        {visibleMessages.map((msg) => {
+        {visibleMessages.map((msg, index) => {
           const senderName = msg.senderName || "Usuário";
           const isMe = senderName.trim().toLowerCase() === currentUser.name.trim().toLowerCase();
           const isPrivate = msg.recipientName && msg.recipientName !== "Todos";
           
+          // Lógica de divisor de data (estilo WhatsApp)
+          const msgDate = new Date(msg.timestamp);
+          const prevMsg = index > 0 ? visibleMessages[index - 1] : null;
+          const prevDate = prevMsg ? new Date(prevMsg.timestamp) : null;
+          
+          const isNewDay = !prevDate || 
+            msgDate.getDate() !== prevDate.getDate() || 
+            msgDate.getMonth() !== prevDate.getMonth() || 
+            msgDate.getFullYear() !== prevDate.getFullYear();
+
+          let dateLabel = "";
+          if (isNewDay) {
+            const today = new Date();
+            const yesterday = new Date();
+            yesterday.setDate(today.getDate() - 1);
+
+            const isSameDay = (d1: Date, d2: Date) => 
+              d1.getDate() === d2.getDate() && 
+              d1.getMonth() === d2.getMonth() && 
+              d1.getFullYear() === d2.getFullYear();
+
+            if (isSameDay(msgDate, today)) {
+              dateLabel = "Hoje";
+            } else if (isSameDay(msgDate, yesterday)) {
+              dateLabel = "Ontem";
+            } else {
+              dateLabel = msgDate.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' });
+            }
+          }
+          
           return (
-            <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-              <div className="flex items-end gap-2 mb-1">
-                {!isMe && (
-                  <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-[10px] font-bold">
-                    {senderName.charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <span className="text-[10px] font-extrabold text-slate-500">{isMe ? "Você" : senderName}</span>
-                <span className="text-[9px] text-slate-300 font-bold">
-                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-                
-                {isPrivate && (
-                  <span className={`text-[9px] flex items-center gap-1.5 px-1.5 py-0.5 rounded font-extrabold border uppercase tracking-wider ${
-                    isMe
-                      ? (msg.isRead 
-                          ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
-                          : 'bg-slate-50 text-slate-400 border-slate-100')
-                      : 'bg-rose-50 text-rose-600 border-rose-100'
-                  }`}>
-                    <Lock className="w-2.5 h-2.5" />
-                    <span>{isMe ? `Privado para ${msg.recipientName}` : "Privado para Você"}</span>
-                    {isMe && (
-                      <span className="normal-case font-black border-l pl-1.5 border-current">
-                        {msg.isRead ? "✓✓ Lida" : "✓ Enviada"}
-                      </span>
-                    )}
+            <React.Fragment key={msg.id}>
+              {isNewDay && (
+                <div className="flex justify-center my-4">
+                  <span className="bg-slate-200/80 text-slate-600 px-3 py-1 rounded-lg text-xs font-black tracking-wider shadow-sm">
+                    {dateLabel}
                   </span>
-                )}
-              </div>
-              
-              <div className={`relative max-w-[85%] sm:max-w-[70%] px-4 py-3 rounded-2xl ${
-                isMe 
-                  ? (isPrivate ? 'bg-indigo-700 text-white rounded-tr-sm ring-1 ring-indigo-400' : 'bg-indigo-600 text-white rounded-tr-sm') 
-                  : (isPrivate ? 'bg-rose-50 border border-rose-200 text-rose-950 rounded-tl-sm ring-1 ring-rose-100' : 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm shadow-sm')
-              }`}>
-                {msg.content && <p className="text-sm font-medium break-words whitespace-pre-wrap">{msg.content}</p>}
+                </div>
+              )}
+              <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                <div className="flex items-end gap-2 mb-1">
+                  {!isMe && (
+                    <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-[10px] font-bold">
+                      {senderName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <span className="text-[10px] font-extrabold text-slate-500">{isMe ? "Você" : senderName}</span>
+                  <span className="text-[9px] text-slate-300 font-bold">
+                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  
+                  {isPrivate && (
+                    <span className={`text-[9px] flex items-center gap-1.5 px-1.5 py-0.5 rounded font-extrabold border uppercase tracking-wider ${
+                      isMe
+                        ? (msg.isRead 
+                            ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
+                            : 'bg-slate-50 text-slate-400 border-slate-100')
+                        : 'bg-rose-50 text-rose-600 border-rose-100'
+                    }`}>
+                      <Lock className="w-2.5 h-2.5" />
+                      <span>{isMe ? `Privado para ${msg.recipientName}` : "Privado para Você"}</span>
+                      {isMe && (
+                        <span className="normal-case font-black border-l pl-1.5 border-current">
+                          {msg.isRead ? "✓✓ Lida" : "✓ Enviada"}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </div>
                 
-                {msg.fileData && (
-                  <div className={`mt-2 ${msg.content ? 'pt-2 border-t border-opacity-20 ' + (isMe ? 'border-white' : (isPrivate ? 'border-rose-200' : 'border-slate-200')) : ''}`}>
-                    {msg.fileType?.startsWith('image/') ? (
-                      <img src={msg.fileData} alt="attachment" className="rounded-xl max-h-60 object-contain bg-slate-100" />
-                    ) : msg.fileType?.startsWith('video/') ? (
-                      <video src={msg.fileData} controls className="rounded-xl max-h-60 max-w-full bg-slate-900" />
-                    ) : msg.fileType?.startsWith('audio/') ? (
-                      <audio src={msg.fileData} controls className="w-full max-w-[250px] scale-90 origin-left" />
-                    ) : (
-                      <a href={msg.fileData} download={msg.fileName} className={`flex items-center gap-2 p-2 rounded-xl text-xs font-bold transition-all ${isMe ? 'bg-indigo-800 hover:bg-indigo-900 text-white' : 'bg-white hover:bg-slate-50 border border-slate-200'} `}>
-                        <FileIcon className="w-4 h-4 text-emerald-500" />
-                        <span className="truncate max-w-[150px]">{msg.fileName}</span>
-                      </a>
-                    )}
-                  </div>
-                )}
+                <div className={`relative max-w-[85%] sm:max-w-[70%] px-4 py-3 rounded-2xl ${
+                  isMe 
+                    ? (isPrivate ? 'bg-indigo-700 text-white rounded-tr-sm ring-1 ring-indigo-400' : 'bg-indigo-600 text-white rounded-tr-sm') 
+                    : (isPrivate ? 'bg-rose-50 border border-rose-200 text-rose-950 rounded-tl-sm ring-1 ring-rose-100' : 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm shadow-sm')
+                }`}>
+                  {msg.content && <p className="text-sm font-medium break-words whitespace-pre-wrap">{msg.content}</p>}
+                  
+                  {msg.fileData && (
+                    <div className={`mt-2 ${msg.content ? 'pt-2 border-t border-opacity-20 ' + (isMe ? 'border-white' : (isPrivate ? 'border-rose-200' : 'border-slate-200')) : ''}`}>
+                      {msg.fileType?.startsWith('image/') ? (
+                        <img src={msg.fileData} alt="attachment" className="rounded-xl max-h-60 object-contain bg-slate-100" />
+                      ) : msg.fileType?.startsWith('video/') ? (
+                        <video src={msg.fileData} controls className="rounded-xl max-h-60 max-w-full bg-slate-900" />
+                      ) : msg.fileType?.startsWith('audio/') ? (
+                        <audio src={msg.fileData} controls className="w-full max-w-[250px] scale-90 origin-left" />
+                      ) : (
+                        <a href={msg.fileData} download={msg.fileName} className={`flex items-center gap-2 p-2 rounded-xl text-xs font-bold transition-all ${isMe ? 'bg-indigo-800 hover:bg-indigo-900 text-white' : 'bg-white hover:bg-slate-50 border border-slate-200'} `}>
+                          <FileIcon className="w-4 h-4 text-emerald-500" />
+                          <span className="truncate max-w-[150px]">{msg.fileName}</span>
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            </React.Fragment>
           );
         })}
+
 
         {typingUsers && typingUsers.length > 0 && (
           <div className="flex items-center gap-2 text-[10px] font-black text-indigo-500 pl-4 py-1.5 animate-pulse bg-indigo-50/50 rounded-xl w-fit">

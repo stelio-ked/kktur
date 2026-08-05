@@ -1,119 +1,201 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { ChatMessage } from "../types";
+
+// Intervalo de fallback quando SSE não está disponível (ex: HTTP/1.0, proxy incompatível)
+const POLLING_INTERVAL_MS = 5_000;
 
 export function useChat(itineraryId: string | number, currentUserName?: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const lastTimestampRef = React.useRef<string | null>(null);
+
+  const lastTimestampRef = useRef<string | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const pollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sseFailed = useRef(false);
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  const isLocal = typeof itineraryId === "string" && itineraryId.startsWith("local-");
+
+  const mergeMessages = useCallback((incoming: ChatMessage[]) => {
+    if (!incoming.length) return;
+    setMessages((prev) => {
+      const incomingIds = new Set(incoming.map((m) => m.id));
+      const merged = [
+        ...prev.filter((old) => !incomingIds.has(old.id)),
+        ...incoming,
+      ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      return merged;
+    });
+    lastTimestampRef.current = incoming[incoming.length - 1].timestamp;
+  }, []);
+
+  // ─── Polling fallback ─────────────────────────────────────────────────────
 
   const fetchMessages = useCallback(async () => {
-    if (typeof itineraryId === "string" && itineraryId.startsWith("local-")) {
+    if (isLocal) {
       try {
         const stored = localStorage.getItem(`meu_agente_chat_${itineraryId}`);
-        if (stored) {
-          setMessages(JSON.parse(stored));
-        }
-      } catch(e) {}
+        if (stored) setMessages(JSON.parse(stored));
+      } catch {}
       return;
     }
 
     try {
       const token = localStorage.getItem("auth_token");
-      const url = currentUserName 
-        ? `/api/messages/${encodeURIComponent(itineraryId)}?username=${encodeURIComponent(currentUserName)}${lastTimestampRef.current ? '&since=' + encodeURIComponent(lastTimestampRef.current) : ''}`
-        : `/api/messages/${encodeURIComponent(itineraryId)}${lastTimestampRef.current ? '?since=' + encodeURIComponent(lastTimestampRef.current) : ''}`;
-      const res = await fetch(url, {
-        headers: { "Authorization": `Bearer ${token}` }
+      const since = lastTimestampRef.current
+        ? `&since=${encodeURIComponent(lastTimestampRef.current)}`
+        : "";
+      const user = currentUserName
+        ? `?username=${encodeURIComponent(currentUserName)}${since}`
+        : since ? `?${since.slice(1)}` : "";
+
+      const res = await fetch(`/api/messages/${encodeURIComponent(itineraryId)}${user}`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        const text = await res.text();
-        try {
-          const data = JSON.parse(text);
-          const isInitialLoad = !lastTimestampRef.current;
 
-          if (Array.isArray(data)) {
-            if (data.length > 0) {
-              lastTimestampRef.current = data[data.length - 1].timestamp;
+      if (!res.ok) return;
 
-              setMessages(prev => {
-                const newIds = new Set(data.map((m: any) => m.id));
-                return [...prev.filter(old => !newIds.has(old.id)), ...data].sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-              });
-            }
-            setTypingUsers([]);
-          } else if (data && typeof data === "object") {
-            if (data.messages && data.messages.length > 0) {
-              lastTimestampRef.current = data.messages[data.messages.length - 1].timestamp;
+      const data = await res.json().catch(() => null);
+      if (!data) return;
 
-              setMessages(prev => {
-                const newIds = new Set(data.messages.map((m: any) => m.id));
-                return [...prev.filter(old => !newIds.has(old.id)), ...data.messages].sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-              });
-            }
-            setTypingUsers(data.typingUsers || []);
-          }
-        } catch (e) {
-          console.error("fetchMessages JSON parse error. content:", text.substring(0, 50));
-        }
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        console.error("fetchMessages failed:", res.status, errData);
-      }
+      const msgs: ChatMessage[] = Array.isArray(data) ? data : data.messages ?? [];
+      mergeMessages(msgs);
+      if (!Array.isArray(data)) setTypingUsers(data.typingUsers ?? []);
     } catch (e: any) {
-      const isNetworkError = e?.message && (
-        e.message.includes("Failed to fetch") || 
-        e.message.includes("network error") || 
-        e.message.includes("NetworkError") || 
-        e.message.includes("abort")
-      );
-      if (isNetworkError) {
-        console.warn("fetchMessages temporarily unavailable (transient network/server restart):", e.message);
-      } else {
-        console.error("fetchMessages error:", e);
-      }
+      const isNetwork =
+        e?.message?.includes("Failed to fetch") ||
+        e?.message?.includes("NetworkError") ||
+        e?.message?.includes("abort");
+      if (!isNetwork) console.error("[useChat] fetchMessages error:", e);
     }
-  }, [itineraryId, currentUserName]);
+  }, [itineraryId, currentUserName, mergeMessages, isLocal]);
+
+  // ─── SSE principal ────────────────────────────────────────────────────────
+
+  const connectSSE = useCallback(() => {
+    if (isLocal || sseFailed.current) return;
+
+    const token = localStorage.getItem("auth_token");
+    if (!token) return;
+
+    // Fechar conexão anterior, se houver
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+
+    const url = `/api/chat/stream/${encodeURIComponent(itineraryId)}?token=${encodeURIComponent(token)}`;
+    const es = new EventSource(url);
+    eventSourceRef.current = es;
+
+    // Carga inicial de mensagens enviada pelo servidor ao conectar
+    es.addEventListener("connected", (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.messages?.length) mergeMessages(data.messages);
+      } catch {}
+    });
+
+    // Nova mensagem em tempo real
+    es.addEventListener("new_message", (e: MessageEvent) => {
+      try {
+        const msg: ChatMessage = JSON.parse(e.data);
+        mergeMessages([msg]);
+      } catch {}
+    });
+
+    // Atualização de quem está digitando
+    es.addEventListener("typing", (e: MessageEvent) => {
+      try {
+        const { typingUsers: users } = JSON.parse(e.data);
+        setTypingUsers(
+          (users as string[]).filter(
+            (u) => u.toLowerCase() !== (currentUserName || "").toLowerCase()
+          )
+        );
+      } catch {}
+    });
+
+    // Heartbeat — apenas mantém a conexão; sem ação necessária
+    es.addEventListener("heartbeat", () => {});
+
+    es.onerror = () => {
+      console.warn("[useChat] SSE error — switching to polling fallback.");
+      es.close();
+      eventSourceRef.current = null;
+      sseFailed.current = true;
+
+      // Inicia polling como fallback
+      fetchMessages();
+      pollingTimerRef.current = setInterval(fetchMessages, POLLING_INTERVAL_MS);
+    };
+  }, [itineraryId, currentUserName, mergeMessages, fetchMessages, isLocal]);
+
+  // ─── Lifecycle ────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    fetchMessages();
-    const intervalId = setInterval(fetchMessages, 5000); // Polling every 5s
-    return () => clearInterval(intervalId);
-  }, [fetchMessages]);
+    // Reset ao trocar de itinerário
+    setMessages([]);
+    setTypingUsers([]);
+    lastTimestampRef.current = null;
+    sseFailed.current = false;
+
+    if (isLocal) {
+      // Itinerários locais: sempre polling simples
+      fetchMessages();
+      pollingTimerRef.current = setInterval(fetchMessages, POLLING_INTERVAL_MS);
+    } else if (typeof EventSource !== "undefined") {
+      connectSSE();
+    } else {
+      // Browser sem suporte a EventSource (raro): polling
+      sseFailed.current = true;
+      fetchMessages();
+      pollingTimerRef.current = setInterval(fetchMessages, POLLING_INTERVAL_MS);
+    }
+
+    return () => {
+      eventSourceRef.current?.close();
+      eventSourceRef.current = null;
+      if (pollingTimerRef.current) {
+        clearInterval(pollingTimerRef.current);
+        pollingTimerRef.current = null;
+      }
+    };
+  }, [itineraryId, currentUserName]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Typing ───────────────────────────────────────────────────────────────
 
   const setTyping = async (isTyping: boolean) => {
-    if (typeof itineraryId === "string" && itineraryId.startsWith("local-") || !currentUserName) {
-      return;
-    }
+    if (isLocal || !currentUserName) return;
     try {
       const token = localStorage.getItem("auth_token");
       await fetch("/api/messages/typing", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          itineraryId,
-          username: currentUserName,
-          isTyping
-        })
+        body: JSON.stringify({ itineraryId, username: currentUserName, isTyping }),
       });
     } catch (e) {
-      console.error("Error setting typing status:", e);
+      console.error("[useChat] setTyping error:", e);
     }
   };
 
+  // ─── Enviar mensagem ──────────────────────────────────────────────────────
+
   const sendMessage = async (payload: any) => {
-    if (typeof itineraryId === "string" && itineraryId.startsWith("local-")) {
+    if (isLocal) {
       const stored = localStorage.getItem(`meu_agente_chat_${itineraryId}`);
       const localMsgs = stored ? JSON.parse(stored) : [];
       localMsgs.push({
-        id: 'msg-' + Math.random().toString(36).substring(7),
+        id: "msg-" + Math.random().toString(36).substring(7),
         itineraryId,
         timestamp: new Date().toISOString(),
-        ...payload
+        ...payload,
       });
       localStorage.setItem(`meu_agente_chat_${itineraryId}`, JSON.stringify(localMsgs));
       fetchMessages();
@@ -128,25 +210,20 @@ export function useChat(itineraryId: string | number, currentUserName?: string) 
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          itineraryId,
-          ...payload
-        })
+        body: JSON.stringify({ itineraryId, ...payload }),
       });
-      
+
       if (res.ok) {
-        fetchMessages();
+        // SSE vai entregar a mensagem — sem necessidade de re-fetch manual
         return true;
       } else {
         const errorData = await res.json().catch(() => ({}));
-        console.error("sendMessage failed API response:", res.status, errorData);
         setError(errorData.error || "Erro ao enviar mensagem.");
         return false;
       }
     } catch (e) {
-      console.error("sendMessage network error:", e);
       setError("Erro de conexão ao enviar mensagem.");
       return false;
     } finally {
@@ -161,6 +238,6 @@ export function useChat(itineraryId: string | number, currentUserName?: string) 
     error,
     sendMessage,
     setTyping,
-    fetchMessages
+    fetchMessages,
   };
 }

@@ -27,8 +27,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 
 // server.ts
 var import_dns = __toESM(require("dns"), 1);
-var import_express = __toESM(require("express"), 1);
+var import_express7 = __toESM(require("express"), 1);
 var import_path = __toESM(require("path"), 1);
+var import_drizzle_orm9 = require("drizzle-orm");
 
 // src/db/index.ts
 var import_node_postgres = require("drizzle-orm/node-postgres");
@@ -1902,29 +1903,8 @@ var INITIAL_DOCUMENTS = [
   }
 ];
 
-// server.ts
+// src/services/itineraryStorage.ts
 var import_drizzle_orm2 = require("drizzle-orm");
-var import_bcryptjs = __toESM(require("bcryptjs"), 1);
-var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
-var import_crypto = __toESM(require("crypto"), 1);
-var import_genai = require("@google/genai");
-import_dns.default.setDefaultResultOrder("ipv4first");
-if (process.env.NODE_ENV === "production" && (!process.env.JWT_SECRET || process.env.JWT_SECRET === "meu-secret-super-seguro-dev-only")) {
-  console.error("FATAL: JWT_SECRET n\xE3o configurado ou inseguro em ambiente de produ\xE7\xE3o.");
-  process.exit(1);
-}
-var JWT_SECRET = process.env.JWT_SECRET || "meu-secret-super-seguro-dev-only";
-var formatDbError = (err) => {
-  if (err && err.message) {
-    let msg = err.message;
-    if (err.cause) {
-      const causeMsg = typeof err.cause === "object" && err.cause.message ? err.cause.message : String(err.cause);
-      msg += ` | Causa original: ${causeMsg}`;
-    }
-    return msg;
-  }
-  return String(err);
-};
 function mapItineraryFromDb(itinerary) {
   const prefix = `${itinerary.id}_`;
   const strip = (id) => {
@@ -2387,136 +2367,6 @@ async function saveItineraryData(tx, itineraryId, data, options = {}) {
     }
   }
 }
-var MAX_GEMINI_CALLS_PER_DAY = 15;
-var geminiQuotaMiddleware = async (req, res, next) => {
-  if (!req.user || req.user.id === 0) return next();
-  const userId = req.user.id;
-  const itineraryId = req.body?.itineraryId || req.query?.itineraryId || null;
-  const dateStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-  try {
-    const existing = await db.query.apiUsageLogs.findFirst({
-      where: (0, import_drizzle_orm2.and)(
-        (0, import_drizzle_orm2.eq)(apiUsageLogs.userId, userId),
-        (0, import_drizzle_orm2.eq)(apiUsageLogs.dateString, dateStr)
-      )
-    });
-    if (existing && existing.callCount >= MAX_GEMINI_CALLS_PER_DAY) {
-      return res.status(429).json({
-        error: "Limite di\xE1rio de uso da IA atingido. Para evitar custos excessivos, o limite \xE9 de " + MAX_GEMINI_CALLS_PER_DAY + " requisi\xE7\xF5es por dia. Tente novamente amanh\xE3."
-      });
-    }
-    if (existing) {
-      await db.update(apiUsageLogs).set({
-        callCount: existing.callCount + 1,
-        updatedAt: /* @__PURE__ */ new Date()
-      }).where((0, import_drizzle_orm2.eq)(apiUsageLogs.id, existing.id));
-    } else {
-      await db.insert(apiUsageLogs).values({
-        userId,
-        itineraryId,
-        dateString: dateStr,
-        callCount: 1
-      });
-    }
-  } catch (error) {
-    console.warn("Failed to update API usage logs:", error);
-  }
-  next();
-};
-var aiClient = new import_genai.GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build"
-    }
-  }
-});
-async function generateContentWithRetry(params, retries = 4, initialDelay = 2500) {
-  let lastError;
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await aiClient.models.generateContent(params);
-    } catch (err) {
-      lastError = err;
-      const errMsg = err.message || JSON.stringify(err);
-      if (errMsg.includes("503") || errMsg.includes("UNAVAILABLE") || errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.toLowerCase().includes("high demand") || errMsg.toLowerCase().includes("overloaded") || errMsg.toLowerCase().includes("quota")) {
-        break;
-      }
-      if (i < retries - 1) {
-        const sleepDelay = initialDelay * Math.pow(1.5, i);
-        await new Promise((resolve) => setTimeout(resolve, sleepDelay));
-      }
-    }
-  }
-  const fallbackModels = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
-  for (const fallbackModel of fallbackModels) {
-    if (params.model === fallbackModel) continue;
-    try {
-      const res = await aiClient.models.generateContent({
-        ...params,
-        model: fallbackModel
-      });
-      return res;
-    } catch (fallbackErr) {
-      lastError = fallbackErr;
-    }
-  }
-  const finalErrorMsg = lastError?.message || String(lastError);
-  if (finalErrorMsg.includes("429") || finalErrorMsg.includes("RESOURCE_EXHAUSTED") || finalErrorMsg.toLowerCase().includes("quota") || finalErrorMsg.toLowerCase().includes("rate limit")) {
-    const customError = new Error(
-      "Limite de uso tempor\xE1rio do Gemini atingido (Cota do Plano Gratuito excedida). Por favor, aguarde de 1 a 2 minutos para liberar a cota ou cadastre uma Gemini API Key com faturamento ativo."
-    );
-    customError.status = 429;
-    throw customError;
-  }
-  throw lastError;
-}
-var recentAccessLogCache = /* @__PURE__ */ new Map();
-async function shouldLogAccess(db2, email, itineraryId, accessLogsTable) {
-  const normEmail = email.trim().toLowerCase();
-  const key = `${normEmail}_${itineraryId || 0}`;
-  const now = Date.now();
-  const lastTime = recentAccessLogCache.get(key);
-  if (lastTime && now - lastTime < 15 * 60 * 1e3) {
-    return false;
-  }
-  recentAccessLogCache.set(key, now);
-  try {
-    const fifteenMinutesAgo = new Date(now - 15 * 60 * 1e3);
-    const recentLogs = await db2.select().from(accessLogsTable).where(
-      (0, import_drizzle_orm2.and)(
-        (0, import_drizzle_orm2.eq)(accessLogsTable.userEmail, normEmail),
-        itineraryId ? (0, import_drizzle_orm2.eq)(accessLogsTable.itineraryId, itineraryId) : import_drizzle_orm2.sql`${accessLogsTable.itineraryId} IS NULL`,
-        import_drizzle_orm2.sql`${accessLogsTable.attemptedAt} > ${fifteenMinutesAgo}`
-      )
-    ).limit(1);
-    if (recentLogs.length > 0) {
-      return false;
-    }
-  } catch (err) {
-    console.error("Error in shouldLogAccess check: ", err);
-  }
-  return true;
-}
-var authMiddleware = (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "Token n\xE3o fornecido" });
-  if (token === "traveler-session") {
-    if (process.env.NODE_ENV === "production") {
-      return res.status(401).json({ error: "Sess\xE3o est\xE1tica desativada em produ\xE7\xE3o" });
-    }
-    req.user = { id: 0, email: "traveler@viagem.com", name: "Viajante" };
-    return next();
-  }
-  try {
-    const decoded = import_jsonwebtoken.default.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    res.status(401).json({ error: "Token inv\xE1lido" });
-  }
-};
-var typingParticipants = {};
 async function restoreItinerary45IfNeeded() {
   if (!db) return;
   try {
@@ -2566,717 +2416,860 @@ async function restoreItinerary45IfNeeded() {
     console.error("Erro ao restaurar itiner\xE1rio 45:", err);
   }
 }
-async function startServer() {
-  if (db) {
-    try {
-      await db.execute(import_drizzle_orm2.sql`ALTER TABLE "destinations" ADD COLUMN IF NOT EXISTS "ratings" text;`);
-      console.log("Database schema check complete: 'destinations.ratings' column verified.");
-      await restoreItinerary45IfNeeded();
-    } catch (err) {
-      console.error("Error ensuring database schema columns:", err);
-    }
+var recentAccessLogCache = /* @__PURE__ */ new Map();
+async function shouldLogAccess(db2, email, itineraryId, accessLogsTable) {
+  const normEmail = email.trim().toLowerCase();
+  const key = `${normEmail}_${itineraryId || 0}`;
+  const now = Date.now();
+  const lastTime = recentAccessLogCache.get(key);
+  if (lastTime && now - lastTime < 15 * 60 * 1e3) {
+    return false;
   }
-  const app = (0, import_express.default)();
-  const PORT = 3e3;
-  app.use(import_express.default.json({ limit: "50mb" }));
-  app.use(import_express.default.urlencoded({ limit: "50mb", extended: true }));
-  app.get("/api/health", (req, res) => {
-    res.json({
-      status: "ok",
-      message: "Servidor online com Postgres suportado!"
-    });
-  });
-  app.get("/api/ping-db", async (req, res) => {
-    if (!db) {
-      return res.status(503).json({
-        error: "DATABASE_URL na\u0303o configurada no painel de Segredos (Settings > Secrets)."
-      });
+  recentAccessLogCache.set(key, now);
+  try {
+    const fifteenMinutesAgo = new Date(now - 15 * 60 * 1e3);
+    const recentLogs = await db2.select().from(accessLogsTable).where(
+      (0, import_drizzle_orm2.and)(
+        (0, import_drizzle_orm2.eq)(accessLogsTable.userEmail, normEmail),
+        itineraryId ? (0, import_drizzle_orm2.eq)(accessLogsTable.itineraryId, itineraryId) : import_drizzle_orm2.sql`${accessLogsTable.itineraryId} IS NULL`,
+        import_drizzle_orm2.sql`${accessLogsTable.attemptedAt} > ${fifteenMinutesAgo}`
+      )
+    ).limit(1);
+    if (recentLogs.length > 0) {
+      return false;
     }
-    try {
-      const allUsers = await db.select().from(users).limit(1);
-      res.json({
-        status: "ok",
-        message: "Conectado ao PostgreSQL com sucesso!",
-        testQuery: allUsers
-      });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ status: "error", error: error.message });
+  } catch (err) {
+    console.error("Error in shouldLogAccess check: ", err);
+  }
+  return true;
+}
+
+// src/routes/auth.ts
+var import_express = require("express");
+var import_bcryptjs = __toESM(require("bcryptjs"), 1);
+var import_jsonwebtoken2 = __toESM(require("jsonwebtoken"), 1);
+var import_crypto = __toESM(require("crypto"), 1);
+var import_drizzle_orm3 = require("drizzle-orm");
+
+// src/middleware/auth.ts
+var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
+if (process.env.NODE_ENV === "production" && (!process.env.JWT_SECRET || process.env.JWT_SECRET === "meu-secret-super-seguro-dev-only")) {
+  console.error("FATAL: JWT_SECRET n\xE3o configurado ou inseguro em ambiente de produ\xE7\xE3o.");
+  process.exit(1);
+}
+var JWT_SECRET = process.env.JWT_SECRET || "meu-secret-super-seguro-dev-only";
+var formatDbError = (err) => {
+  if (err && err.message) {
+    let msg = err.message;
+    if (err.cause) {
+      const causeMsg = typeof err.cause === "object" && err.cause.message ? err.cause.message : String(err.cause);
+      msg += ` | Causa original: ${causeMsg}`;
     }
-  });
-  app.post("/api/auth/register", async (req, res) => {
-    try {
-      const { email, password, name } = req.body;
-      if (!email || !password || !name) return res.status(400).json({ error: "Preencha todos os campos" });
-      const existingUser = await db.select().from(users).where((0, import_drizzle_orm2.eq)(users.email, email)).limit(1);
-      if (existingUser.length > 0) return res.status(400).json({ error: "E-mail j\xE1 cadastrado" });
-      const salt = await import_bcryptjs.default.genSalt(10);
-      const passwordHash = await import_bcryptjs.default.hash(password, salt);
-      const [newUser] = await db.insert(users).values({ email, passwordHash, name }).returning();
-      const token = import_jsonwebtoken.default.sign({ id: newUser.id, email: newUser.email, name: newUser.name }, JWT_SECRET, { expiresIn: "7d" });
-      res.json({ success: true, token, user: { id: newUser.id, email: newUser.email, name: newUser.name } });
-    } catch (err) {
-      res.status(500).json({ error: formatDbError(err) });
+    return msg;
+  }
+  return String(err);
+};
+var authMiddleware = (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Token n\xE3o fornecido" });
+  if (token === "traveler-session") {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(401).json({ error: "Sess\xE3o est\xE1tica desativada em produ\xE7\xE3o" });
     }
-  });
-  app.post("/api/auth/login", async (req, res) => {
-    try {
-      const { email, password } = req.body;
-      if (!email || !password) return res.status(400).json({ error: "Preencha e-mail e senha" });
-      const [user] = await db.select().from(users).where((0, import_drizzle_orm2.eq)(users.email, email)).limit(1);
-      if (!user || !user.passwordHash) return res.status(400).json({ error: "Credenciais inv\xE1lidas" });
-      const isValid = await import_bcryptjs.default.compare(password, user.passwordHash);
-      if (!isValid) return res.status(400).json({ error: "Credenciais inv\xE1lidas" });
-      const token = import_jsonwebtoken.default.sign({ id: user.id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: "7d" });
-      res.json({ success: true, token, user: { id: user.id, email: user.email, name: user.name } });
-    } catch (err) {
-      res.status(500).json({ error: formatDbError(err) });
+    req.user = { id: 0, email: "traveler@viagem.com", name: "Viajante" };
+    return next();
+  }
+  try {
+    const decoded = import_jsonwebtoken.default.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: "Token inv\xE1lido" });
+  }
+};
+
+// src/routes/auth.ts
+var router = (0, import_express.Router)();
+var simulatedEmails = [];
+router.post("/register", async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+    if (!email || !password || !name) return res.status(400).json({ error: "Preencha todos os campos" });
+    const existingUser = await db.select().from(users).where((0, import_drizzle_orm3.eq)(users.email, email)).limit(1);
+    if (existingUser.length > 0) return res.status(400).json({ error: "E-mail j\xE1 cadastrado" });
+    const salt = await import_bcryptjs.default.genSalt(10);
+    const passwordHash = await import_bcryptjs.default.hash(password, salt);
+    const [newUser] = await db.insert(users).values({ email, passwordHash, name }).returning();
+    const token = import_jsonwebtoken2.default.sign({ id: newUser.id, email: newUser.email, name: newUser.name }, JWT_SECRET, { expiresIn: "7d" });
+    res.json({ success: true, token, user: { id: newUser.id, email: newUser.email, name: newUser.name } });
+  } catch (err) {
+    res.status(500).json({ error: formatDbError(err) });
+  }
+});
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: "Preencha e-mail e senha" });
+    const [user] = await db.select().from(users).where((0, import_drizzle_orm3.eq)(users.email, email)).limit(1);
+    if (!user || !user.passwordHash) return res.status(400).json({ error: "Credenciais inv\xE1lidas" });
+    const isValid = await import_bcryptjs.default.compare(password, user.passwordHash);
+    if (!isValid) return res.status(400).json({ error: "Credenciais inv\xE1lidas" });
+    const token = import_jsonwebtoken2.default.sign({ id: user.id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: "7d" });
+    res.json({ success: true, token, user: { id: user.id, email: user.email, name: user.name } });
+  } catch (err) {
+    res.status(500).json({ error: formatDbError(err) });
+  }
+});
+router.get("/me", authMiddleware, (req, res) => {
+  res.json({ user: req.user });
+});
+router.post("/change-my-password", authMiddleware, async (req, res) => {
+  try {
+    const { email, currentPassword, newPassword } = req.body;
+    const userId = req.user?.id;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres." });
     }
-  });
-  app.get("/api/auth/me", authMiddleware, (req, res) => {
-    res.json({ user: req.user });
-  });
-  const simulatedEmails = [];
-  app.post("/api/auth/change-my-password", authMiddleware, async (req, res) => {
-    try {
-      const { email, currentPassword, newPassword } = req.body;
-      const userId = req.user.id;
-      if (!newPassword || newPassword.length < 6) {
-        return res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres." });
-      }
-      let user;
-      if (userId === 0 && email) {
-        const [foundUser] = await db.select().from(users).where((0, import_drizzle_orm2.eq)(users.email, email)).limit(1);
-        if (foundUser) {
-          user = foundUser;
-        } else {
-          user = { id: 0, email, passwordHash: null };
-        }
-      } else {
-        const [foundUser] = await db.select().from(users).where((0, import_drizzle_orm2.eq)(users.id, userId)).limit(1);
+    let user;
+    if (userId === 0 && email) {
+      const [foundUser] = await db.select().from(users).where((0, import_drizzle_orm3.eq)(users.email, email)).limit(1);
+      if (foundUser) {
         user = foundUser;
-      }
-      if (!user) {
-        return res.status(404).json({ error: "Usu\xE1rio n\xE3o encontrado." });
-      }
-      if (user.passwordHash) {
-        if (!currentPassword) {
-          return res.status(400).json({ error: "A senha atual \xE9 obrigat\xF3ria." });
-        }
-        const isMatch = await import_bcryptjs.default.compare(currentPassword, user.passwordHash);
-        if (!isMatch) {
-          return res.status(400).json({ error: "A senha atual est\xE1 incorreta." });
-        }
-      }
-      const saltRounds = 10;
-      const hash = await import_bcryptjs.default.hash(newPassword, saltRounds);
-      if (user.id === 0) {
-        await db.insert(users).values({ email: user.email, name: "Viajante", passwordHash: hash });
       } else {
-        await db.update(users).set({ passwordHash: hash }).where((0, import_drizzle_orm2.eq)(users.id, user.id));
+        user = { id: 0, email, passwordHash: null };
       }
-      res.json({ success: true, message: "Senha alterada com sucesso." });
-    } catch (err) {
-      console.error("Change password error:", err);
-      res.status(500).json({ error: "Erro interno ao alterar a senha." });
+    } else {
+      const [foundUser] = await db.select().from(users).where((0, import_drizzle_orm3.eq)(users.id, userId)).limit(1);
+      user = foundUser;
     }
-  });
-  app.get("/api/dev/last-emails", async (req, res) => {
-    if (process.env.NODE_ENV === "production") {
-      return res.status(403).json({ error: "Endpoint desativado em produ\xE7\xE3o." });
+    if (!user) {
+      return res.status(404).json({ error: "Usu\xE1rio n\xE3o encontrado." });
     }
-    try {
-      const { email } = req.query;
-      if (!email) {
-        return res.json([]);
+    if (user.passwordHash) {
+      if (!currentPassword) {
+        return res.status(400).json({ error: "A senha atual \xE9 obrigat\xF3ria." });
       }
-      const filtered = simulatedEmails.filter(
-        (m) => m.to.toLowerCase() === String(email).toLowerCase()
-      );
-      res.json(filtered);
-    } catch (err) {
-      res.status(500).json({ error: err.message });
+      const isMatch = await import_bcryptjs.default.compare(currentPassword, user.passwordHash);
+      if (!isMatch) {
+        return res.status(400).json({ error: "A senha atual est\xE1 incorreta." });
+      }
     }
-  });
-  app.delete("/api/dev/last-emails/:id", async (req, res) => {
-    if (process.env.NODE_ENV === "production") {
-      return res.status(403).json({ error: "Endpoint desativado em produ\xE7\xE3o." });
+    const saltRounds = 10;
+    const hash = await import_bcryptjs.default.hash(newPassword, saltRounds);
+    if (user.id === 0) {
+      await db.insert(users).values({ email: user.email, name: "Viajante", passwordHash: hash });
+    } else {
+      await db.update(users).set({ passwordHash: hash }).where((0, import_drizzle_orm3.eq)(users.id, user.id));
     }
-    try {
-      const { id } = req.params;
-      const index = simulatedEmails.findIndex((m) => m.id === id);
-      if (index !== -1) {
-        simulatedEmails.splice(index, 1);
-      }
-      res.json({ success: true });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
+    res.json({ success: true, message: "Senha alterada com sucesso." });
+  } catch (err) {
+    console.error("Change password error:", err);
+    res.status(500).json({ error: "Erro interno ao alterar a senha." });
+  }
+});
+router.post("/gmail-signup", async (req, res) => {
+  try {
+    const { email, name } = req.body;
+    if (!email || !name) {
+      return res.status(400).json({ error: "E-mail e Nome s\xE3o obrigat\xF3rios." });
     }
-  });
-  app.post("/api/auth/gmail-signup", async (req, res) => {
-    try {
-      const { email, name } = req.body;
-      if (!email || !name) {
-        return res.status(400).json({ error: "E-mail e Nome s\xE3o obrigat\xF3rios." });
+    const isGmailOfGoogle = email.toLowerCase().endsWith("@gmail.com");
+    if (!isGmailOfGoogle) {
+      return res.status(400).json({ error: "Por favor, utilize uma conta de e-mail do Google (@gmail.com) v\xE1lida." });
+    }
+    const [existingUser] = await db.select().from(users).where((0, import_drizzle_orm3.eq)(users.email, email)).limit(1);
+    let targetUserId;
+    let isNewAccount = false;
+    if (!existingUser) {
+      const [newUser] = await db.insert(users).values({
+        email,
+        name,
+        passwordHash: null
+      }).returning();
+      targetUserId = newUser.id;
+      isNewAccount = true;
+    } else {
+      targetUserId = existingUser.id;
+      isNewAccount = false;
+    }
+    const token = import_crypto.default.randomBytes(32).toString("hex");
+    const expires = new Date(Date.now() + 3600 * 1e3);
+    await db.update(users).set({
+      passwordResetToken: token,
+      passwordResetExpires: expires
+    }).where((0, import_drizzle_orm3.eq)(users.id, targetUserId));
+    const resetUrl = `?action=setup_password&token=${token}&email=${encodeURIComponent(email)}`;
+    simulatedEmails.push({
+      id: import_crypto.default.randomUUID ? import_crypto.default.randomUUID() : Math.random().toString(),
+      to: email,
+      subject: isNewAccount ? "Cria\xE7\xE3o de Conta KK TUR - Defina sua Senha Segura" : "KK TUR - Defina ou Atualize sua Senha de Acesso",
+      body: `Ol\xE1, ${name || "Viajante"}!
+
+Voc\xEA solicitou a cria\xE7\xE3o de conta ou redefini\xE7\xE3o de acesso via Gmail do Google na KK TUR Di\xE1rio de Bordo.
+
+Para cadastrar sua senha com total seguran\xE7a, clique no link de valida\xE7\xE3o a seguir.`,
+      link: resetUrl,
+      date: /* @__PURE__ */ new Date()
+    });
+    res.json({
+      success: true,
+      message: "E-mail enviado! Um link de configura\xE7\xE3o foi enviado para o seu e-mail do Google Gmail.",
+      email,
+      isNewAccount
+    });
+  } catch (err) {
+    console.error("Gmail signup error:", err);
+    res.status(500).json({ error: "Erro ao registrar com Gmail: " + err.message });
+  }
+});
+router.post("/gmail-verify-token", async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: "Token de verifica\xE7\xE3o ausente." });
+    }
+    const [user] = await db.select().from(users).where((0, import_drizzle_orm3.eq)(users.passwordResetToken, token)).limit(1);
+    if (!user) {
+      return res.status(400).json({ error: "Link de verifica\xE7\xE3o inv\xE1lido ou j\xE1 utilizado." });
+    }
+    if (user.passwordResetExpires && /* @__PURE__ */ new Date() > new Date(user.passwordResetExpires)) {
+      return res.status(400).json({ error: "O link de seguran\xE7a expirou. Solicite um novo envio." });
+    }
+    res.json({ success: true, email: user.email, name: user.name });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao verificar token: " + err.message });
+  }
+});
+router.post("/gmail-set-password", async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) {
+      return res.status(400).json({ error: "Token e senha de acesso s\xE3o necess\xE1rios." });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: "A senha de seguran\xE7a deve conter no m\xEDnimo 6 caracteres." });
+    }
+    const [user] = await db.select().from(users).where((0, import_drizzle_orm3.eq)(users.passwordResetToken, token)).limit(1);
+    if (!user) {
+      return res.status(400).json({ error: "Token inv\xE1lido." });
+    }
+    if (user.passwordResetExpires && /* @__PURE__ */ new Date() > new Date(user.passwordResetExpires)) {
+      return res.status(400).json({ error: "O prazo de expira\xE7\xE3o do link de seguran\xE7a expirou." });
+    }
+    const salt = await import_bcryptjs.default.genSalt(10);
+    const passwordHash = await import_bcryptjs.default.hash(password, salt);
+    await db.update(users).set({
+      passwordHash,
+      passwordResetToken: null,
+      passwordResetExpires: null
+    }).where((0, import_drizzle_orm3.eq)(users.id, user.id));
+    const userEmail = user.email;
+    const indexList = [];
+    simulatedEmails.forEach((m, idx) => {
+      if (m.to.toLowerCase() === userEmail.toLowerCase()) {
+        indexList.push(idx);
       }
-      const isGmailOfGoogle = email.toLowerCase().endsWith("@gmail.com");
-      if (!isGmailOfGoogle) {
-        return res.status(400).json({ error: "Por favor, utilize uma conta de e-mail do Google (@gmail.com) v\xE1lida." });
-      }
-      const [existingUser] = await db.select().from(users).where((0, import_drizzle_orm2.eq)(users.email, email)).limit(1);
-      let targetUserId;
-      let isNewAccount = false;
-      if (!existingUser) {
-        const [newUser] = await db.insert(users).values({
-          email,
-          name,
-          passwordHash: null
-        }).returning();
-        targetUserId = newUser.id;
-        isNewAccount = true;
-      } else {
-        targetUserId = existingUser.id;
-        isNewAccount = false;
-      }
+    });
+    for (let i = indexList.length - 1; i >= 0; i--) {
+      simulatedEmails.splice(indexList[i], 1);
+    }
+    const authToken = import_jsonwebtoken2.default.sign({ id: user.id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: "7d" });
+    res.json({
+      success: true,
+      message: "Senha definida com sucesso! Acesso concedido.",
+      token: authToken,
+      user: { id: user.id, email: user.email, name: user.name }
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao definir senha: " + err.message });
+  }
+});
+router.post("/firebase-google-login", async (req, res) => {
+  try {
+    const { email, name } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: "E-mail do Firebase \xE9 obrigat\xF3rio." });
+    }
+    const isGmailOfGoogle = email.toLowerCase().endsWith("@gmail.com");
+    if (!isGmailOfGoogle) {
+      return res.status(400).json({ error: "Apenas e-mails terminados em @gmail.com s\xE3o permitidos via login do Google." });
+    }
+    let [existingUser] = await db.select().from(users).where((0, import_drizzle_orm3.eq)(users.email, email)).limit(1);
+    if (!existingUser) {
+      const [newUser] = await db.insert(users).values({
+        email,
+        name: name || email.split("@")[0],
+        passwordHash: null
+      }).returning();
+      existingUser = newUser;
+    }
+    const appToken = import_jsonwebtoken2.default.sign(
+      { id: existingUser.id, email: existingUser.email, name: existingUser.name },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+    res.json({
+      success: true,
+      token: appToken,
+      user: { id: existingUser.id, email: existingUser.email, name: existingUser.name }
+    });
+  } catch (err) {
+    console.error("Firebase Google Auth login error:", err);
+    res.status(500).json({ error: "Erro ao autenticar usu\xE1rio com Firebase: " + err.message });
+  }
+});
+router.post("/gmail-google-login", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: "E-mail \xE9 obrigat\xF3rio." });
+    }
+    const isGmailOfGoogle = email.toLowerCase().endsWith("@gmail.com");
+    if (!isGmailOfGoogle) {
+      return res.status(400).json({ error: "Por favor, utilize uma conta de e-mail do Google (@gmail.com) v\xE1lida." });
+    }
+    const [user] = await db.select().from(users).where((0, import_drizzle_orm3.eq)(users.email, email)).limit(1);
+    if (!user) {
+      return res.status(404).json({ error: "Conta Gmail n\xE3o cadastrada. Por favor, clique em criar conta abaixo." });
+    }
+    if (!user.passwordHash) {
       const token = import_crypto.default.randomBytes(32).toString("hex");
       const expires = new Date(Date.now() + 3600 * 1e3);
       await db.update(users).set({
         passwordResetToken: token,
         passwordResetExpires: expires
-      }).where((0, import_drizzle_orm2.eq)(users.id, targetUserId));
-      const resetUrl = `?action=setup_password&token=${token}&email=${encodeURIComponent(email)}`;
-      simulatedEmails.push({
-        id: import_crypto.default.randomUUID ? import_crypto.default.randomUUID() : Math.random().toString(),
-        to: email,
-        subject: isNewAccount ? "Cria\xE7\xE3o de Conta KK TUR - Defina sua Senha Segura" : "KK TUR - Defina ou Atualize sua Senha de Acesso",
-        body: `Ol\xE1, ${name || "Viajante"}!
-
-Voc\xEA solicitou a cria\xE7\xE3o de conta ou redefini\xE7\xE3o de acesso via Gmail do Google na KK TUR Di\xE1rio de Bordo.
-
-Para cadastrar sua senha com total seguran\xE7a, clique no link de valida\xE7\xE3o a seguir.`,
-        link: resetUrl,
-        date: /* @__PURE__ */ new Date()
-      });
-      res.json({
-        success: true,
-        message: "E-mail enviado! Um link de configura\xE7\xE3o foi enviado para o seu e-mail do Google Gmail.",
-        email,
-        isNewAccount
-      });
-    } catch (err) {
-      console.error("Gmail signup error:", err);
-      res.status(500).json({ error: "Erro ao registrar com Gmail: " + err.message });
-    }
-  });
-  app.post("/api/auth/gmail-verify-token", async (req, res) => {
-    try {
-      const { token } = req.body;
-      if (!token) {
-        return res.status(400).json({ error: "Token de verifica\xE7\xE3o ausente." });
-      }
-      const [user] = await db.select().from(users).where((0, import_drizzle_orm2.eq)(users.passwordResetToken, token)).limit(1);
-      if (!user) {
-        return res.status(400).json({ error: "Link de verifica\xE7\xE3o inv\xE1lido ou j\xE1 utilizado." });
-      }
-      if (user.passwordResetExpires && /* @__PURE__ */ new Date() > new Date(user.passwordResetExpires)) {
-        return res.status(400).json({ error: "O link de seguran\xE7a expirou. Solicite um novo envio." });
-      }
-      res.json({ success: true, email: user.email, name: user.name });
-    } catch (err) {
-      res.status(500).json({ error: "Erro ao verificar token: " + err.message });
-    }
-  });
-  app.post("/api/auth/gmail-set-password", async (req, res) => {
-    try {
-      const { token, password } = req.body;
-      if (!token || !password) {
-        return res.status(400).json({ error: "Token e senha de acesso s\xE3o necess\xE1rios." });
-      }
-      if (password.length < 6) {
-        return res.status(400).json({ error: "A senha de seguran\xE7a deve conter no m\xEDnimo 6 caracteres." });
-      }
-      const [user] = await db.select().from(users).where((0, import_drizzle_orm2.eq)(users.passwordResetToken, token)).limit(1);
-      if (!user) {
-        return res.status(400).json({ error: "Token inv\xE1lido." });
-      }
-      if (user.passwordResetExpires && /* @__PURE__ */ new Date() > new Date(user.passwordResetExpires)) {
-        return res.status(400).json({ error: "O prazo de expira\xE7\xE3o do link de seguran\xE7a expirou." });
-      }
-      const salt = await import_bcryptjs.default.genSalt(10);
-      const passwordHash = await import_bcryptjs.default.hash(password, salt);
-      await db.update(users).set({
-        passwordHash,
-        passwordResetToken: null,
-        passwordResetExpires: null
-      }).where((0, import_drizzle_orm2.eq)(users.id, user.id));
-      const userEmail = user.email;
+      }).where((0, import_drizzle_orm3.eq)(users.id, user.id));
+      const resetUrl = `?action=setup_password&token=${token}&email=${encodeURIComponent(user.email)}`;
       const indexList = [];
       simulatedEmails.forEach((m, idx) => {
-        if (m.to.toLowerCase() === userEmail.toLowerCase()) {
+        if (m.to.toLowerCase() === user.email.toLowerCase()) {
           indexList.push(idx);
         }
       });
       for (let i = indexList.length - 1; i >= 0; i--) {
         simulatedEmails.splice(indexList[i], 1);
       }
-      const appToken = import_jsonwebtoken.default.sign({ id: user.id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: "7d" });
-      res.json({
-        success: true,
-        token: appToken,
-        user: { id: user.id, email: user.email, name: user.name }
-      });
-    } catch (err) {
-      console.error("Gmail set password error:", err);
-      res.status(500).json({ error: "Erro ao salvar nova senha: " + err.message });
-    }
-  });
-  app.post("/api/auth/firebase-google-login", async (req, res) => {
-    try {
-      const { email, name, firebaseUid } = req.body;
-      if (!email) {
-        return res.status(400).json({ error: "E-mail do Firebase \xE9 obrigat\xF3rio." });
-      }
-      const isGmailOfGoogle = email.toLowerCase().endsWith("@gmail.com");
-      if (!isGmailOfGoogle) {
-        return res.status(400).json({ error: "Apenas e-mails terminados em @gmail.com s\xE3o permitidos via login do Google." });
-      }
-      let [existingUser] = await db.select().from(users).where((0, import_drizzle_orm2.eq)(users.email, email)).limit(1);
-      if (!existingUser) {
-        const [newUser] = await db.insert(users).values({
-          email,
-          name: name || email.split("@")[0],
-          passwordHash: null
-        }).returning();
-        existingUser = newUser;
-      }
-      const appToken = import_jsonwebtoken.default.sign(
-        { id: existingUser.id, email: existingUser.email, name: existingUser.name },
-        JWT_SECRET,
-        { expiresIn: "7d" }
-      );
-      res.json({
-        success: true,
-        token: appToken,
-        user: { id: existingUser.id, email: existingUser.email, name: existingUser.name }
-      });
-    } catch (err) {
-      console.error("Firebase Google Auth login error:", err);
-      res.status(500).json({ error: "Erro ao autenticar usu\xE1rio com Firebase: " + err.message });
-    }
-  });
-  app.post("/api/auth/gmail-google-login", async (req, res) => {
-    try {
-      const { email } = req.body;
-      if (!email) {
-        return res.status(400).json({ error: "E-mail \xE9 obrigat\xF3rio." });
-      }
-      const isGmailOfGoogle = email.toLowerCase().endsWith("@gmail.com");
-      if (!isGmailOfGoogle) {
-        return res.status(400).json({ error: "Por favor, utilize uma conta de e-mail do Google (@gmail.com) v\xE1lida." });
-      }
-      const [user] = await db.select().from(users).where((0, import_drizzle_orm2.eq)(users.email, email)).limit(1);
-      if (!user) {
-        return res.status(404).json({ error: "Conta Gmail n\xE3o cadastrada. Por favor, clique em criar conta abaixo." });
-      }
-      if (!user.passwordHash) {
-        const token = import_crypto.default.randomBytes(32).toString("hex");
-        const expires = new Date(Date.now() + 3600 * 1e3);
-        await db.update(users).set({
-          passwordResetToken: token,
-          passwordResetExpires: expires
-        }).where((0, import_drizzle_orm2.eq)(users.id, user.id));
-        const resetUrl = `?action=setup_password&token=${token}&email=${encodeURIComponent(user.email)}`;
-        const indexList = [];
-        simulatedEmails.forEach((m, idx) => {
-          if (m.to.toLowerCase() === user.email.toLowerCase()) {
-            indexList.push(idx);
-          }
-        });
-        for (let i = indexList.length - 1; i >= 0; i--) {
-          simulatedEmails.splice(indexList[i], 1);
-        }
-        simulatedEmails.push({
-          id: import_crypto.default.randomUUID ? import_crypto.default.randomUUID() : Math.random().toString(),
-          to: user.email,
-          subject: "KK TUR - Defina sua Senha Segura (Acesso Pendente)",
-          body: `Ol\xE1, ${user.name || "Viajante"}!
+      simulatedEmails.push({
+        id: import_crypto.default.randomUUID ? import_crypto.default.randomUUID() : Math.random().toString(),
+        to: user.email,
+        subject: "KK TUR - Defina sua Senha Segura (Acesso Pendente)",
+        body: `Ol\xE1, ${user.name || "Viajante"}!
 
 Identificamos uma tentativa de login com a sua conta Google Gmail, mas a sua senha de seguran\xE7a de organizador ainda n\xE3o foi configurada.
 
 Para cadastrar sua nova senha com seguran\xE7a imediatamente, por favor clique no link de valida\xE7\xE3o a seguir.`,
-          link: resetUrl,
-          date: /* @__PURE__ */ new Date()
-        });
-        return res.status(400).json({
-          error: "Esta conta foi cadastrada, mas sua senha de seguran\xE7a ainda n\xE3o est\xE1 ativa. Como voc\xEA tentou logar, acabamos de gerar e enviar um link para configurar sua senha na sua Caixa de Entrada Simulada abaixo! Por favor, verifique-a e crie sua senha.",
-          requiresPasswordSetup: true
-        });
-      }
-      const appToken = import_jsonwebtoken.default.sign({ id: user.id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: "7d" });
-      res.json({
-        success: true,
-        token: appToken,
-        user: { id: user.id, email: user.email, name: user.name }
+        link: resetUrl,
+        date: /* @__PURE__ */ new Date()
       });
-    } catch (err) {
-      res.status(500).json({ error: "Erro no login com Google: " + err.message });
-    }
-  });
-  app.get("/api/itineraries", authMiddleware, async (req, res) => {
-    if (!db) return res.status(503).json({ error: "No DB configuration." });
-    try {
-      const cleanEmail = (req.user?.email || "").trim().toLowerCase();
-      let travelerItineraryIds = [];
-      if (cleanEmail) {
-        const linkedTravelers = await db.select({ itineraryId: travelers.itineraryId }).from(travelers).where((0, import_drizzle_orm2.and)(
-          (0, import_drizzle_orm2.isNotNull)(travelers.email),
-          (0, import_drizzle_orm2.eq)(import_drizzle_orm2.sql`LOWER(TRIM(${travelers.email}))`, cleanEmail)
-        ));
-        travelerItineraryIds = Array.from(new Set(linkedTravelers.map((t) => t.itineraryId)));
-      }
-      let whereClause;
-      if (travelerItineraryIds.length > 0) {
-        whereClause = (0, import_drizzle_orm2.or)(
-          (0, import_drizzle_orm2.eq)(itineraries.ownerId, req.user.id),
-          (0, import_drizzle_orm2.inArray)(itineraries.id, travelerItineraryIds)
-        );
-      } else {
-        whereClause = (0, import_drizzle_orm2.eq)(itineraries.ownerId, req.user.id);
-      }
-      const dbItineraries = await db.query.itineraries.findMany({
-        where: whereClause,
-        with: {
-          travelers: true,
-          costs: true,
-          costCategories: true,
-          documents: true,
-          flights: {
-            with: { passengersList: true }
-          },
-          generalTips: true,
-          notifications: true,
-          transactionLogs: true,
-          destinations: {
-            with: { days: { with: { activities: true } } }
-          }
-        }
+      return res.status(400).json({
+        error: "Esta conta foi cadastrada, mas sua senha de seguran\xE7a ainda n\xE3o est\xE1 ativa. Como voc\xEA tentou logar, acabamos de gerar e enviar um link para configurar sua senha na sua Caixa de Entrada Simulada abaixo! Por favor, verifique-a e crie sua senha.",
+        requiresPasswordSetup: true
       });
-      try {
-        if (dbItineraries.length > 0) {
-          const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
-          const clientIp = typeof ip === "string" ? ip : ip[0];
-          const firstItinerary = dbItineraries[0];
-          if (await shouldLogAccess(db, req.user.email, firstItinerary.id, accessLogs)) {
-            await db.insert(accessLogs).values({
-              itineraryId: firstItinerary.id,
-              userEmail: req.user.email,
-              status: "success",
-              ipAddress: clientIp
-            });
-          }
-        }
-      } catch (err) {
-        console.error("Erro ao registrar log de acesso para o itiner\xE1rio:", err);
-      }
-      const response = dbItineraries.map((itinerary) => mapItineraryFromDb(itinerary));
-      const userRecord = await db.query.users.findFirst({
-        where: (0, import_drizzle_orm2.eq)(users.id, req.user.id)
-      });
-      res.json({
-        itineraries: response,
-        favoriteItineraryId: userRecord?.favoriteItineraryId
-      });
-    } catch (error) {
-      console.error("Fetch DB error:", error);
-      res.status(500).json({ error: error.message });
     }
-  });
-  app.put("/api/users/favorite", authMiddleware, async (req, res) => {
-    if (!db) return res.status(503).json({ error: "DATABASE_URL n\xE3o configurada." });
-    try {
-      const { itineraryId } = req.body;
-      await db.update(users).set({ favoriteItineraryId: itineraryId ? Number(itineraryId) : null }).where((0, import_drizzle_orm2.eq)(users.id, req.user.id));
-      res.json({ success: true, favoriteItineraryId: itineraryId });
-    } catch (error) {
-      console.error("Favorite setting error:", error);
-      res.status(500).json({ error: "Erro ao favoritar viagem." });
+    const appToken = import_jsonwebtoken2.default.sign({ id: user.id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: "7d" });
+    res.json({
+      success: true,
+      token: appToken,
+      user: { id: user.id, email: user.email, name: user.name }
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Erro no login com Google: " + err.message });
+  }
+});
+var auth_default = router;
+
+// src/routes/dev.ts
+var import_express2 = require("express");
+var router2 = (0, import_express2.Router)();
+router2.get("/last-emails", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "Endpoint desativado em produ\xE7\xE3o." });
+  }
+  try {
+    const { email } = req.query;
+    if (!email) {
+      return res.json([]);
     }
-  });
-  app.post("/api/itineraries", authMiddleware, async (req, res) => {
-    if (!db) return res.status(503).json({ error: "DATABASE_URL n\xE3o configurada." });
-    try {
-      const { title, data } = req.body;
-      const [itinerary] = await db.insert(itineraries).values({
-        ownerId: req.user.id,
-        title: title || "Nova Viagem",
-        isShared: true
-      }).returning();
-      if (data) {
-        await saveItineraryData(db, itinerary.id, data);
-      }
-      res.json({ success: true, itinerary: { id: itinerary.id, title: itinerary.title, data: data || {} } });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: formatDbError(err) });
+    const filtered = simulatedEmails.filter(
+      (m) => m.to.toLowerCase() === String(email).toLowerCase()
+    );
+    res.json(filtered);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router2.delete("/last-emails/:id", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "Endpoint desativado em produ\xE7\xE3o." });
+  }
+  try {
+    const { id } = req.params;
+    const index = simulatedEmails.findIndex((m) => m.id === id);
+    if (index !== -1) {
+      simulatedEmails.splice(index, 1);
     }
-  });
-  app.put("/api/itineraries/:id", authMiddleware, async (req, res) => {
-    if (!db) return res.status(503).json({ error: "DATABASE_URL n\xE3o configurada." });
-    try {
-      const itineraryId = parseInt(req.params.id);
-      const { title, data, ecoMode } = req.body;
-      if (isNaN(itineraryId)) return res.status(400).json({ error: "ID inv\xE1lido" });
-      const [existing] = await db.select().from(itineraries).where((0, import_drizzle_orm2.eq)(itineraries.id, itineraryId)).limit(1);
-      if (!existing) return res.status(404).json({ error: "Itiner\xE1rio n\xE3o encontrado" });
-      if (existing.ownerId !== req.user.id) {
-        const cleanEmail = req.user.email.trim().toLowerCase();
-        const [isTraveler] = await db.select().from(travelers).where((0, import_drizzle_orm2.and)(
-          (0, import_drizzle_orm2.eq)(travelers.itineraryId, itineraryId),
-          (0, import_drizzle_orm2.eq)(import_drizzle_orm2.sql`LOWER(TRIM(${travelers.email}))`, cleanEmail)
-        )).limit(1);
-        if (!isTraveler) {
-          return res.status(403).json({ error: "N\xE3o autorizado: Apenas o propriet\xE1rio ou viajantes podem editar." });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+var dev_default = router2;
+
+// src/routes/itineraries.ts
+var import_express3 = require("express");
+var import_drizzle_orm4 = require("drizzle-orm");
+var router3 = (0, import_express3.Router)();
+router3.get("/", authMiddleware, async (req, res) => {
+  if (!db) return res.status(503).json({ error: "No DB configuration." });
+  try {
+    const cleanEmail = (req.user?.email || "").trim().toLowerCase();
+    let travelerItineraryIds = [];
+    if (cleanEmail) {
+      const linkedTravelers = await db.select({ itineraryId: travelers.itineraryId }).from(travelers).where((0, import_drizzle_orm4.and)(
+        (0, import_drizzle_orm4.isNotNull)(travelers.email),
+        (0, import_drizzle_orm4.eq)(import_drizzle_orm4.sql`LOWER(TRIM(${travelers.email}))`, cleanEmail)
+      ));
+      travelerItineraryIds = Array.from(new Set(linkedTravelers.map((t) => t.itineraryId)));
+    }
+    let whereClause;
+    if (travelerItineraryIds.length > 0) {
+      whereClause = (0, import_drizzle_orm4.or)(
+        (0, import_drizzle_orm4.eq)(itineraries.ownerId, req.user.id),
+        (0, import_drizzle_orm4.inArray)(itineraries.id, travelerItineraryIds)
+      );
+    } else {
+      whereClause = (0, import_drizzle_orm4.eq)(itineraries.ownerId, req.user.id);
+    }
+    const dbItineraries = await db.query.itineraries.findMany({
+      where: whereClause,
+      with: {
+        travelers: true,
+        costs: true,
+        costCategories: true,
+        documents: true,
+        flights: {
+          with: { passengersList: true }
+        },
+        generalTips: true,
+        notifications: true,
+        transactionLogs: true,
+        destinations: {
+          with: { days: { with: { activities: true } } }
         }
       }
-      await db.transaction(async (tx) => {
-        let updateData = { updatedAt: /* @__PURE__ */ new Date() };
-        if (title !== void 0) updateData.title = title;
-        if (ecoMode !== void 0) updateData.ecoMode = ecoMode;
-        await tx.update(itineraries).set(updateData).where((0, import_drizzle_orm2.eq)(itineraries.id, itineraryId));
-        if (data) {
-          const isPayloadEmpty = (!data.destinations || data.destinations.length === 0) && (!data.flights || data.flights.length === 0) && (!data.costs || data.costs.length === 0) && (!data.travelers || data.travelers.length <= 1);
-          if (isPayloadEmpty) {
-            const currentDestinations = await db.select().from(destinations).where((0, import_drizzle_orm2.eq)(destinations.itineraryId, itineraryId));
-            const currentTravelers = await db.select().from(travelers).where((0, import_drizzle_orm2.eq)(travelers.itineraryId, itineraryId));
-            if (currentDestinations.length > 0 || currentTravelers.length > 1) {
-              console.warn(`[PUT /api/itineraries/${itineraryId}] Ignorando salvamento de payload vazio para proteger dados existentes.`);
-              return res.json({ success: true, warning: "Payload vazio ignorado para preservar dados na nuvem." });
-            }
-          }
-          let existingFlights = [];
-          let existingDocuments = [];
-          let existingCosts = [];
-          let existingActivities = [];
-          try {
-            existingFlights = await tx.query.flights.findMany({
-              where: (0, import_drizzle_orm2.eq)(flights.itineraryId, itineraryId),
-              with: { passengersList: true }
-            });
-            existingDocuments = await tx.select().from(documents).where((0, import_drizzle_orm2.eq)(documents.itineraryId, itineraryId));
-            existingCosts = await tx.select().from(costs).where((0, import_drizzle_orm2.eq)(costs.itineraryId, itineraryId));
-            const existingDestinations = await tx.select().from(destinations).where((0, import_drizzle_orm2.eq)(destinations.itineraryId, itineraryId));
-            const existingDestIds = existingDestinations.map((d) => d.id);
-            if (existingDestIds.length > 0) {
-              const existingDays = await tx.select().from(itineraryDays).where((0, import_drizzle_orm2.inArray)(itineraryDays.destinationId, existingDestIds));
-              const existingDayIds = existingDays.map((dy) => dy.id);
-              if (existingDayIds.length > 0) {
-                existingActivities = await tx.select().from(activities).where((0, import_drizzle_orm2.inArray)(activities.dayId, existingDayIds));
-              }
-            }
-          } catch (fetchErr) {
-            console.error("Erro ao recuperar registros existentes para preservar arquivos:", fetchErr);
-          }
-          try {
-            const existingDestinations = await tx.select().from(destinations).where((0, import_drizzle_orm2.eq)(destinations.itineraryId, itineraryId));
-            const existingDestIds = existingDestinations.map((d) => d.id);
-            if (existingDestIds.length > 0) {
-              const existingDays = await tx.select().from(itineraryDays).where((0, import_drizzle_orm2.inArray)(itineraryDays.destinationId, existingDestIds));
-              const existingDayIds = existingDays.map((dy) => dy.id);
-              if (existingDayIds.length > 0) {
-                await tx.delete(activities).where((0, import_drizzle_orm2.inArray)(activities.dayId, existingDayIds));
-              }
-              await tx.delete(itineraryDays).where((0, import_drizzle_orm2.inArray)(itineraryDays.destinationId, existingDestIds));
-            }
-          } catch (err) {
-            console.error("Erro ao deletar de forma explicita dias e atividades:", err);
-          }
-          try {
-            const existingFlightsForDelete = await tx.select().from(flights).where((0, import_drizzle_orm2.eq)(flights.itineraryId, itineraryId));
-            const existingFlightIds = existingFlightsForDelete.map((f) => f.id);
-            if (existingFlightIds.length > 0) {
-              await tx.delete(flightPassengers).where((0, import_drizzle_orm2.inArray)(flightPassengers.flightId, existingFlightIds));
-            }
-          } catch (err) {
-            console.error("Erro ao deletar de forma explicita passageiros de voo:", err);
-          }
-          await tx.delete(travelers).where((0, import_drizzle_orm2.eq)(travelers.itineraryId, itineraryId));
-          await tx.delete(destinations).where((0, import_drizzle_orm2.eq)(destinations.itineraryId, itineraryId));
-          await tx.delete(costs).where((0, import_drizzle_orm2.eq)(costs.itineraryId, itineraryId));
-          await tx.delete(costCategories).where((0, import_drizzle_orm2.eq)(costCategories.itineraryId, itineraryId));
-          await tx.delete(documents).where((0, import_drizzle_orm2.eq)(documents.itineraryId, itineraryId));
-          await tx.delete(flights).where((0, import_drizzle_orm2.eq)(flights.itineraryId, itineraryId));
-          await tx.delete(generalTips).where((0, import_drizzle_orm2.eq)(generalTips.itineraryId, itineraryId));
-          await tx.delete(notifications).where((0, import_drizzle_orm2.eq)(notifications.itineraryId, itineraryId));
-          await tx.delete(transactionLogs).where((0, import_drizzle_orm2.eq)(transactionLogs.itineraryId, itineraryId));
-          await saveItineraryData(tx, itineraryId, data, {
-            existingFlights,
-            existingDocuments,
-            existingCosts,
-            existingActivities
+    });
+    try {
+      if (dbItineraries.length > 0) {
+        const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+        const clientIp = typeof ip === "string" ? ip : ip[0];
+        const firstItinerary = dbItineraries[0];
+        if (await shouldLogAccess(db, req.user.email, firstItinerary.id, accessLogs)) {
+          await db.insert(accessLogs).values({
+            itineraryId: firstItinerary.id,
+            userEmail: req.user.email,
+            status: "success",
+            ipAddress: clientIp
           });
         }
-      });
-      res.json({ success: true, message: "Itiner\xE1rio atualizado com sucesso" });
-    } catch (error) {
-      console.error("Save error:", error);
-      res.status(500).json({ error: error.message });
-    }
-  });
-  app.get("/api/itineraries/:id/access_logs", authMiddleware, async (req, res) => {
-    if (!db) return res.status(503).json({ error: "DATABASE_URL n\xE3o configurada." });
-    try {
-      const itineraryId = parseInt(req.params.id);
-      if (isNaN(itineraryId)) return res.status(400).json({ error: "ID inv\xE1lido" });
-      const [existing] = await db.select().from(itineraries).where((0, import_drizzle_orm2.eq)(itineraries.id, itineraryId)).limit(1);
-      if (!existing) return res.status(404).json({ error: "Itiner\xE1rio n\xE3o encontrado" });
-      if (existing.ownerId !== req.user.id) return res.status(403).json({ error: "N\xE3o autorizado" });
-      let logs = [];
-      try {
-        logs = await db.select().from(accessLogs).where((0, import_drizzle_orm2.eq)(accessLogs.itineraryId, itineraryId)).orderBy(import_drizzle_orm2.sql`${accessLogs.attemptedAt} DESC`);
-      } catch (err) {
-        console.error("Erro ao carregar logs de acesso:", err);
       }
-      res.json({ success: true, logs });
-    } catch (error) {
-      console.error("Access logs fetch error:", error);
-      res.status(500).json({ error: error.message });
-    }
-  });
-  app.delete("/api/itineraries/:id", authMiddleware, async (req, res) => {
-    if (!db) return res.status(503).json({ error: "DATABASE_URL n\xE3o configurada." });
-    try {
-      const itineraryId = parseInt(req.params.id);
-      if (isNaN(itineraryId)) return res.status(400).json({ error: "ID inv\xE1lido" });
-      const [existing] = await db.select().from(itineraries).where((0, import_drizzle_orm2.eq)(itineraries.id, itineraryId)).limit(1);
-      if (!existing) return res.status(404).json({ error: "Itiner\xE1rio n\xE3o encontrado" });
-      if (existing.ownerId !== req.user.id) return res.status(403).json({ error: "N\xE3o autorizado" });
-      await db.delete(itineraries).where((0, import_drizzle_orm2.eq)(itineraries.id, itineraryId));
-      res.json({ success: true, message: "Itiner\xE1rio exclu\xEDdo com sucesso" });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      console.error("Erro ao registrar log de acesso para o itiner\xE1rio:", err);
     }
-  });
-  app.get("/api/messages/:itineraryId", authMiddleware, async (req, res) => {
-    if (!db) return res.status(503).json({ error: "DATABASE_URL na\u0303o configurada." });
-    try {
-      const itId = parseInt(req.params.itineraryId);
-      if (isNaN(itId)) return res.json({ messages: [], typingUsers: [] });
-      const username = (req.query.username || "").toString().trim();
-      if (username) {
-        const lowerUser = username.toLowerCase();
-        const unreadMsgs = await db.select().from(chatMessages).where((0, import_drizzle_orm2.and)(
-          (0, import_drizzle_orm2.eq)(chatMessages.itineraryId, itId),
-          (0, import_drizzle_orm2.eq)(chatMessages.isRead, false)
-        ));
-        const idsToUpdate = unreadMsgs.filter((m) => m.recipientName && m.recipientName.trim().toLowerCase() === lowerUser).map((m) => m.id);
-        if (idsToUpdate.length > 0) {
-          await db.update(chatMessages).set({ isRead: true }).where((0, import_drizzle_orm2.inArray)(chatMessages.id, idsToUpdate));
-        }
+    const response = dbItineraries.map((itinerary) => mapItineraryFromDb(itinerary));
+    const userRecord = await db.query.users.findFirst({
+      where: (0, import_drizzle_orm4.eq)(users.id, req.user.id)
+    });
+    res.json({
+      itineraries: response,
+      favoriteItineraryId: userRecord?.favoriteItineraryId
+    });
+  } catch (error) {
+    console.error("Fetch DB error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+router3.post("/", authMiddleware, async (req, res) => {
+  if (!db) return res.status(503).json({ error: "DATABASE_URL n\xE3o configurada." });
+  try {
+    const { title, data } = req.body;
+    const [itinerary] = await db.insert(itineraries).values({
+      ownerId: req.user.id,
+      title: title || "Nova Viagem",
+      isShared: true
+    }).returning();
+    if (data) {
+      await saveItineraryData(db, itinerary.id, data);
+    }
+    res.json({ success: true, itinerary: { id: itinerary.id, title: itinerary.title, data: data || {} } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: formatDbError(err) });
+  }
+});
+router3.put("/:id", authMiddleware, async (req, res) => {
+  if (!db) return res.status(503).json({ error: "DATABASE_URL n\xE3o configurada." });
+  try {
+    const itineraryId = parseInt(req.params.id);
+    const { title, data, ecoMode } = req.body;
+    if (isNaN(itineraryId)) return res.status(400).json({ error: "ID inv\xE1lido" });
+    const [existing] = await db.select().from(itineraries).where((0, import_drizzle_orm4.eq)(itineraries.id, itineraryId)).limit(1);
+    if (!existing) return res.status(404).json({ error: "Itiner\xE1rio n\xE3o encontrado" });
+    if (existing.ownerId !== req.user.id) {
+      const cleanEmail = req.user.email.trim().toLowerCase();
+      const [isTraveler] = await db.select().from(travelers).where((0, import_drizzle_orm4.and)(
+        (0, import_drizzle_orm4.eq)(travelers.itineraryId, itineraryId),
+        (0, import_drizzle_orm4.eq)(import_drizzle_orm4.sql`LOWER(TRIM(${travelers.email}))`, cleanEmail)
+      )).limit(1);
+      if (!isTraveler) {
+        return res.status(403).json({ error: "N\xE3o autorizado: Apenas o propriet\xE1rio ou viajantes podem editar." });
       }
-      const sinceStr = req.query.since;
-      let baseWhere = (0, import_drizzle_orm2.eq)(chatMessages.itineraryId, itId);
-      if (sinceStr) {
-        baseWhere = (0, import_drizzle_orm2.and)(baseWhere, import_drizzle_orm2.sql`${chatMessages.timestamp} > ${new Date(sinceStr)}`);
-      }
-      const msgs = await db.select().from(chatMessages).where(baseWhere).orderBy(chatMessages.timestamp);
-      const now = Date.now();
-      const typingUsers = [];
-      if (typingParticipants[itId]) {
-        for (const [user, timestamp2] of Object.entries(typingParticipants[itId])) {
-          if (now - timestamp2 < 4e3) {
-            if (user.trim().toLowerCase() !== username.toLowerCase()) {
-              typingUsers.push(user);
-            }
-          } else {
-            delete typingParticipants[itId][user];
+    }
+    await db.transaction(async (tx) => {
+      let updateData = { updatedAt: /* @__PURE__ */ new Date() };
+      if (title !== void 0) updateData.title = title;
+      if (ecoMode !== void 0) updateData.ecoMode = ecoMode;
+      await tx.update(itineraries).set(updateData).where((0, import_drizzle_orm4.eq)(itineraries.id, itineraryId));
+      if (data) {
+        const isPayloadEmpty = (!data.destinations || data.destinations.length === 0) && (!data.flights || data.flights.length === 0) && (!data.costs || data.costs.length === 0) && (!data.travelers || data.travelers.length <= 1);
+        if (isPayloadEmpty) {
+          const currentDestinations = await db.select().from(destinations).where((0, import_drizzle_orm4.eq)(destinations.itineraryId, itineraryId));
+          const currentTravelers = await db.select().from(travelers).where((0, import_drizzle_orm4.eq)(travelers.itineraryId, itineraryId));
+          if (currentDestinations.length > 0 || currentTravelers.length > 1) {
+            console.warn(`[PUT /api/itineraries/${itineraryId}] Ignorando salvamento de payload vazio para proteger dados existentes.`);
+            return res.json({ success: true, warning: "Payload vazio ignorado para preservar dados na nuvem." });
           }
         }
-      }
-      res.json({
-        messages: msgs,
-        typingUsers
-      });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-  app.post("/api/messages/typing", authMiddleware, async (req, res) => {
-    try {
-      const { itineraryId, username, isTyping } = req.body;
-      const itId = parseInt(itineraryId);
-      if (isNaN(itId) || !username) {
-        return res.status(400).json({ error: "Par\xE2metros inv\xE1lidos." });
-      }
-      if (!typingParticipants[itId]) {
-        typingParticipants[itId] = {};
-      }
-      if (isTyping) {
-        typingParticipants[itId][username] = Date.now();
-      } else {
-        delete typingParticipants[itId][username];
-      }
-      res.json({ success: true });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-  app.post("/api/messages", authMiddleware, async (req, res) => {
-    if (!db) return res.status(503).json({ error: "DATABASE_URL na\u0303o configurada." });
-    try {
-      const { itineraryId, senderName, senderAvatar, recipientName, content, fileData, fileName, fileType, fileSize } = req.body;
-      const itId = parseInt(itineraryId);
-      if (isNaN(itId)) return res.status(400).json({ error: "Voc\xEA precisa sincronizar a viagem na nuvem para usar o chat." });
-      const [msg] = await db.insert(chatMessages).values({
-        id: "msg-" + Math.random().toString(36).substring(7),
-        itineraryId: itId,
-        senderName,
-        senderAvatar,
-        recipientName,
-        content,
-        fileData,
-        fileName,
-        fileType,
-        fileSize
-      }).returning();
-      res.json({ success: true, message: msg });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-  app.post("/api/gemini/evaluate-prompt", authMiddleware, geminiQuotaMiddleware, async (req, res) => {
-    try {
-      const { prompt } = req.body;
-      if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
-        return res.status(400).json({ error: "O prompt n\xE3o pode ser vazio." });
-      }
-      if (!process.env.GEMINI_API_KEY) {
-        return res.json({
-          isSpecific: false,
-          reason: "Chave Gemini API n\xE3o configurada no servidor. Usando perguntas padr\xE3o para guiar seu roteiro.",
-          suggestedQuestions: [
-            {
-              id: "destination",
-              question: "Para qual cidade ou pa\xEDs voc\xEA gostaria de ir?",
-              options: ["Paris, Fran\xE7a", "T\xF3quio, Jap\xE3o", "Nova York, EUA", "Florian\xF3polis, Brasil"]
-            },
-            {
-              id: "duration_days",
-              question: "Quantos dias voc\xEA pretende passar l\xE1?",
-              options: ["3 dias", "5 dias", "7 dias", "10 dias"]
-            },
-            {
-              id: "travel_style",
-              question: "Qual o estilo principal da viagem?",
-              options: ["Econ\xF4mico / Mochileiro", "Cultural e Museus", "Gastronomia e Luxo", "Aventura e Natureza"]
+        let existingFlights = [];
+        let existingDocuments = [];
+        let existingCosts = [];
+        let existingActivities = [];
+        try {
+          existingFlights = await tx.query.flights.findMany({
+            where: (0, import_drizzle_orm4.eq)(flights.itineraryId, itineraryId),
+            with: { passengersList: true }
+          });
+          existingDocuments = await tx.select().from(documents).where((0, import_drizzle_orm4.eq)(documents.itineraryId, itineraryId));
+          existingCosts = await tx.select().from(costs).where((0, import_drizzle_orm4.eq)(costs.itineraryId, itineraryId));
+          const existingDestinations = await tx.select().from(destinations).where((0, import_drizzle_orm4.eq)(destinations.itineraryId, itineraryId));
+          const existingDestIds = existingDestinations.map((d) => d.id);
+          if (existingDestIds.length > 0) {
+            const existingDays = await tx.select().from(itineraryDays).where((0, import_drizzle_orm4.inArray)(itineraryDays.destinationId, existingDestIds));
+            const existingDayIds = existingDays.map((dy) => dy.id);
+            if (existingDayIds.length > 0) {
+              existingActivities = await tx.select().from(activities).where((0, import_drizzle_orm4.inArray)(activities.dayId, existingDayIds));
             }
-          ]
+          }
+        } catch (fetchErr) {
+          console.error("Erro ao recuperar registros existentes para preservar arquivos:", fetchErr);
+        }
+        try {
+          const existingDestinations = await tx.select().from(destinations).where((0, import_drizzle_orm4.eq)(destinations.itineraryId, itineraryId));
+          const existingDestIds = existingDestinations.map((d) => d.id);
+          if (existingDestIds.length > 0) {
+            const existingDays = await tx.select().from(itineraryDays).where((0, import_drizzle_orm4.inArray)(itineraryDays.destinationId, existingDestIds));
+            const existingDayIds = existingDays.map((dy) => dy.id);
+            if (existingDayIds.length > 0) {
+              await tx.delete(activities).where((0, import_drizzle_orm4.inArray)(activities.dayId, existingDayIds));
+            }
+            await tx.delete(itineraryDays).where((0, import_drizzle_orm4.inArray)(itineraryDays.destinationId, existingDestIds));
+          }
+        } catch (err) {
+          console.error("Erro ao deletar de forma explicita dias e atividades:", err);
+        }
+        try {
+          const existingFlightsForDelete = await tx.select().from(flights).where((0, import_drizzle_orm4.eq)(flights.itineraryId, itineraryId));
+          const existingFlightIds = existingFlightsForDelete.map((f) => f.id);
+          if (existingFlightIds.length > 0) {
+            await tx.delete(flightPassengers).where((0, import_drizzle_orm4.inArray)(flightPassengers.flightId, existingFlightIds));
+          }
+        } catch (err) {
+          console.error("Erro ao deletar de forma explicita passageiros de voo:", err);
+        }
+        await tx.delete(travelers).where((0, import_drizzle_orm4.eq)(travelers.itineraryId, itineraryId));
+        await tx.delete(destinations).where((0, import_drizzle_orm4.eq)(destinations.itineraryId, itineraryId));
+        await tx.delete(costs).where((0, import_drizzle_orm4.eq)(costs.itineraryId, itineraryId));
+        await tx.delete(costCategories).where((0, import_drizzle_orm4.eq)(costCategories.itineraryId, itineraryId));
+        await tx.delete(documents).where((0, import_drizzle_orm4.eq)(documents.itineraryId, itineraryId));
+        await tx.delete(flights).where((0, import_drizzle_orm4.eq)(flights.itineraryId, itineraryId));
+        await tx.delete(generalTips).where((0, import_drizzle_orm4.eq)(generalTips.itineraryId, itineraryId));
+        await tx.delete(notifications).where((0, import_drizzle_orm4.eq)(notifications.itineraryId, itineraryId));
+        await tx.delete(transactionLogs).where((0, import_drizzle_orm4.eq)(transactionLogs.itineraryId, itineraryId));
+        await saveItineraryData(tx, itineraryId, data, {
+          existingFlights,
+          existingDocuments,
+          existingCosts,
+          existingActivities
         });
       }
-      const response = await generateContentWithRetry({
-        model: "gemini-3.5-flash",
-        contents: `Prompt do Usu\xE1rio: "${prompt}"`,
-        config: {
-          systemInstruction: `Voc\xEA \xE9 um especialista em planejamento de viagens e assistente IA para roteiros de viagem.
+    });
+    res.json({ success: true, message: "Itiner\xE1rio atualizado com sucesso" });
+  } catch (error) {
+    console.error("Save error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+router3.get("/:id/access_logs", authMiddleware, async (req, res) => {
+  if (!db) return res.status(503).json({ error: "DATABASE_URL n\xE3o configurada." });
+  try {
+    const itineraryId = parseInt(req.params.id);
+    if (isNaN(itineraryId)) return res.status(400).json({ error: "ID inv\xE1lido" });
+    const [existing] = await db.select().from(itineraries).where((0, import_drizzle_orm4.eq)(itineraries.id, itineraryId)).limit(1);
+    if (!existing) return res.status(404).json({ error: "Itiner\xE1rio n\xE3o encontrado" });
+    if (existing.ownerId !== req.user.id) return res.status(403).json({ error: "N\xE3o autorizado" });
+    let logs = [];
+    try {
+      logs = await db.select().from(accessLogs).where((0, import_drizzle_orm4.eq)(accessLogs.itineraryId, itineraryId)).orderBy(import_drizzle_orm4.sql`${accessLogs.attemptedAt} DESC`);
+    } catch (err) {
+      console.error("Erro ao carregar logs de acesso:", err);
+    }
+    res.json({ success: true, logs });
+  } catch (error) {
+    console.error("Access logs fetch error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+router3.delete("/:id", authMiddleware, async (req, res) => {
+  if (!db) return res.status(503).json({ error: "DATABASE_URL n\xE3o configurada." });
+  try {
+    const itineraryId = parseInt(req.params.id);
+    if (isNaN(itineraryId)) return res.status(400).json({ error: "ID inv\xE1lido" });
+    const [existing] = await db.select().from(itineraries).where((0, import_drizzle_orm4.eq)(itineraries.id, itineraryId)).limit(1);
+    if (!existing) return res.status(404).json({ error: "Itiner\xE1rio n\xE3o encontrado" });
+    if (existing.ownerId !== req.user.id) return res.status(403).json({ error: "N\xE3o autorizado" });
+    await db.delete(itineraries).where((0, import_drizzle_orm4.eq)(itineraries.id, itineraryId));
+    res.json({ success: true, message: "Itiner\xE1rio exclu\xEDdo com sucesso" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+var itineraries_default = router3;
+
+// src/routes/chat.ts
+var import_express4 = require("express");
+var import_drizzle_orm5 = require("drizzle-orm");
+var router4 = (0, import_express4.Router)();
+var typingParticipants = {};
+router4.get("/:itineraryId", authMiddleware, async (req, res) => {
+  if (!db) return res.status(503).json({ error: "DATABASE_URL n\xE3o configurada." });
+  try {
+    const itId = parseInt(req.params.itineraryId);
+    if (isNaN(itId)) return res.json({ messages: [], typingUsers: [] });
+    const username = (req.query.username || "").toString().trim();
+    if (username) {
+      const lowerUser = username.toLowerCase();
+      const unreadMsgs = await db.select().from(chatMessages).where((0, import_drizzle_orm5.and)(
+        (0, import_drizzle_orm5.eq)(chatMessages.itineraryId, itId),
+        (0, import_drizzle_orm5.eq)(chatMessages.isRead, false)
+      ));
+      const idsToUpdate = unreadMsgs.filter((m) => m.recipientName && m.recipientName.trim().toLowerCase() === lowerUser).map((m) => m.id);
+      if (idsToUpdate.length > 0) {
+        await db.update(chatMessages).set({ isRead: true }).where((0, import_drizzle_orm5.inArray)(chatMessages.id, idsToUpdate));
+      }
+    }
+    const sinceStr = req.query.since;
+    let baseWhere = (0, import_drizzle_orm5.eq)(chatMessages.itineraryId, itId);
+    if (sinceStr) {
+      baseWhere = (0, import_drizzle_orm5.and)(baseWhere, import_drizzle_orm5.sql`${chatMessages.timestamp} > ${new Date(sinceStr)}`);
+    }
+    const msgs = await db.select().from(chatMessages).where(baseWhere).orderBy(chatMessages.timestamp);
+    const now = Date.now();
+    const typingUsers = [];
+    if (typingParticipants[itId]) {
+      for (const [user, timestamp2] of Object.entries(typingParticipants[itId])) {
+        if (now - timestamp2 < 4e3) {
+          if (user.trim().toLowerCase() !== username.toLowerCase()) {
+            typingUsers.push(user);
+          }
+        } else {
+          delete typingParticipants[itId][user];
+        }
+      }
+    }
+    res.json({
+      messages: msgs,
+      typingUsers
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+router4.post("/typing", authMiddleware, async (req, res) => {
+  try {
+    const { itineraryId, username, isTyping } = req.body;
+    const itId = parseInt(itineraryId);
+    if (isNaN(itId) || !username) {
+      return res.status(400).json({ error: "Par\xE2metros inv\xE1lidos." });
+    }
+    if (!typingParticipants[itId]) {
+      typingParticipants[itId] = {};
+    }
+    if (isTyping) {
+      typingParticipants[itId][username] = Date.now();
+    } else {
+      delete typingParticipants[itId][username];
+    }
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+router4.post("/", authMiddleware, async (req, res) => {
+  if (!db) return res.status(503).json({ error: "DATABASE_URL n\xE3o configurada." });
+  try {
+    const { itineraryId, senderName, senderAvatar, recipientName, content, fileData, fileName, fileType, fileSize } = req.body;
+    const itId = parseInt(itineraryId);
+    if (isNaN(itId)) return res.status(400).json({ error: "Voc\xEA precisa sincronizar a viagem na nuvem para usar o chat." });
+    const [msg] = await db.insert(chatMessages).values({
+      id: "msg-" + Math.random().toString(36).substring(7),
+      itineraryId: itId,
+      senderName,
+      senderAvatar,
+      recipientName,
+      content,
+      fileData,
+      fileName,
+      fileType,
+      fileSize
+    }).returning();
+    res.json({ success: true, message: msg });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+var chat_default = router4;
+
+// src/routes/ai.ts
+var import_express5 = require("express");
+var import_crypto2 = __toESM(require("crypto"), 1);
+var import_drizzle_orm7 = require("drizzle-orm");
+var import_genai2 = require("@google/genai");
+
+// src/middleware/geminiQuota.ts
+var import_drizzle_orm6 = require("drizzle-orm");
+var MAX_GEMINI_CALLS_PER_DAY = 15;
+var geminiQuotaMiddleware = async (req, res, next) => {
+  if (!req.user || req.user.id === 0) return next();
+  const userId = req.user.id;
+  const itineraryId = req.body?.itineraryId || req.query?.itineraryId || null;
+  const dateStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  try {
+    const existing = await db.query.apiUsageLogs.findFirst({
+      where: (0, import_drizzle_orm6.and)(
+        (0, import_drizzle_orm6.eq)(apiUsageLogs.userId, userId),
+        (0, import_drizzle_orm6.eq)(apiUsageLogs.dateString, dateStr)
+      )
+    });
+    if (existing && existing.callCount >= MAX_GEMINI_CALLS_PER_DAY) {
+      return res.status(429).json({
+        error: `Limite di\xE1rio de uso da IA atingido. Para evitar custos excessivos, o limite \xE9 de ${MAX_GEMINI_CALLS_PER_DAY} requisi\xE7\xF5es por dia. Tente novamente amanh\xE3.`
+      });
+    }
+    if (existing) {
+      await db.update(apiUsageLogs).set({
+        callCount: existing.callCount + 1,
+        updatedAt: /* @__PURE__ */ new Date()
+      }).where((0, import_drizzle_orm6.eq)(apiUsageLogs.id, existing.id));
+    } else {
+      await db.insert(apiUsageLogs).values({
+        userId,
+        itineraryId,
+        dateString: dateStr,
+        callCount: 1
+      });
+    }
+  } catch (error) {
+    console.warn("Failed to update API usage logs:", error);
+  }
+  next();
+};
+
+// src/services/ai.ts
+var import_genai = require("@google/genai");
+var aiClient = new import_genai.GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  httpOptions: {
+    headers: {
+      "User-Agent": "aistudio-build"
+    }
+  }
+});
+async function generateContentWithRetry(params, retries = 4, initialDelay = 2500) {
+  let lastError;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await aiClient.models.generateContent(params);
+    } catch (err) {
+      lastError = err;
+      const errMsg = err.message || JSON.stringify(err);
+      if (errMsg.includes("503") || errMsg.includes("UNAVAILABLE") || errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.toLowerCase().includes("high demand") || errMsg.toLowerCase().includes("overloaded") || errMsg.toLowerCase().includes("quota")) {
+        break;
+      }
+      if (i < retries - 1) {
+        const sleepDelay = initialDelay * Math.pow(1.5, i);
+        await new Promise((resolve) => setTimeout(resolve, sleepDelay));
+      }
+    }
+  }
+  const fallbackModels = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+  for (const fallbackModel of fallbackModels) {
+    if (params.model === fallbackModel) continue;
+    try {
+      const res = await aiClient.models.generateContent({
+        ...params,
+        model: fallbackModel
+      });
+      return res;
+    } catch (fallbackErr) {
+      lastError = fallbackErr;
+    }
+  }
+  const finalErrorMsg = lastError?.message || String(lastError);
+  if (finalErrorMsg.includes("429") || finalErrorMsg.includes("RESOURCE_EXHAUSTED") || finalErrorMsg.toLowerCase().includes("quota") || finalErrorMsg.toLowerCase().includes("rate limit")) {
+    const customError = new Error(
+      "Limite de uso tempor\xE1rio do Gemini atingido (Cota do Plano Gratuito excedida). Por favor, aguarde de 1 a 2 minutos para liberar a cota ou cadastre uma Gemini API Key com faturamento ativo."
+    );
+    customError.status = 429;
+    throw customError;
+  }
+  throw lastError;
+}
+
+// src/routes/ai.ts
+var router5 = (0, import_express5.Router)();
+router5.post("/evaluate-prompt", authMiddleware, geminiQuotaMiddleware, async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+      return res.status(400).json({ error: "O prompt n\xE3o pode ser vazio." });
+    }
+    if (!process.env.GEMINI_API_KEY) {
+      return res.json({
+        isSpecific: false,
+        reason: "Chave Gemini API n\xE3o configurada no servidor. Usando perguntas padr\xE3o para guiar seu roteiro.",
+        suggestedQuestions: [
+          {
+            id: "destination",
+            question: "Para qual cidade ou pa\xEDs voc\xEA gostaria de ir?",
+            options: ["Paris, Fran\xE7a", "T\xF3quio, Jap\xE3o", "Nova York, EUA", "Florian\xF3polis, Brasil"]
+          },
+          {
+            id: "duration_days",
+            question: "Quantos dias voc\xEA pretende passar l\xE1?",
+            options: ["3 dias", "5 dias", "7 dias", "10 dias"]
+          },
+          {
+            id: "travel_style",
+            question: "Qual o estilo principal da viagem?",
+            options: ["Econ\xF4mico / Mochileiro", "Cultural e Museus", "Gastronomia e Luxo", "Aventura e Natureza"]
+          }
+        ]
+      });
+    }
+    const response = await generateContentWithRetry({
+      model: "gemini-3.5-flash",
+      contents: `Prompt do Usu\xE1rio: "${prompt}"`,
+      config: {
+        systemInstruction: `Voc\xEA \xE9 um especialista em planejamento de viagens e assistente IA para roteiros de viagem.
 O usu\xE1rio vai fornecer um prompt de viagem descrevendo uma viagem desejada.
 Sua tarefa \xE9 avaliar se o prompt possui detalhes suficientes (destino claro e dura\xE7\xE3o/dias estimados) para gerar um di\xE1rio de bordo completo com atividades di\xE1rias de alta qualidade.
 
@@ -3296,46 +3289,46 @@ Retorne EXCLUSIVAMENTE um objeto JSON v\xE1lido correspondente a este schema:
     }
   ]
 }`,
-          responseMimeType: "application/json",
-          temperature: 0.2
-        }
-      });
-      const text2 = response.text || "{}";
-      const result = JSON.parse(text2.trim());
-      res.json(result);
-    } catch (err) {
-      console.error("Evaluation error:", err);
-      res.status(500).json({ error: "Erro ao avaliar o prompt com IA: " + err.message });
+        responseMimeType: "application/json",
+        temperature: 0.2
+      }
+    });
+    const text2 = response.text || "{}";
+    const result = JSON.parse(text2.trim());
+    res.json(result);
+  } catch (err) {
+    console.error("Evaluation error:", err);
+    res.status(500).json({ error: "Erro ao avaliar o prompt com IA: " + err.message });
+  }
+});
+router5.post("/optimize-route", authMiddleware, geminiQuotaMiddleware, async (req, res) => {
+  try {
+    const { city, activities: activities2 } = req.body;
+    if (!city) {
+      return res.status(400).json({ error: "O nome da cidade \xE9 obrigat\xF3rio." });
     }
-  });
-  app.post("/api/gemini/optimize-route", authMiddleware, geminiQuotaMiddleware, async (req, res) => {
-    try {
-      const { city, activities: activities2 } = req.body;
-      if (!city) {
-        return res.status(400).json({ error: "O nome da cidade \xE9 obrigat\xF3rio." });
-      }
-      if (!activities2 || !Array.isArray(activities2) || activities2.length === 0) {
-        return res.status(400).json({ error: "Nenhuma atividade fornecida para otimiza\xE7\xE3o." });
-      }
-      if (!process.env.GEMINI_API_KEY) {
-        return res.status(503).json({ error: "Chave Gemini API n\xE3o est\xE1 configurada no servidor (Settings > Secrets)." });
-      }
-      const minimalActivities = activities2.map((act) => ({
-        id: act.id,
-        time: act.time || "N\xE3o especificado",
-        location: act.location || "Sem local espec\xEDfico",
-        duration: act.duration || "N\xE3o especificada",
-        notes: act.notes || "",
-        latitude: act.latitude,
-        longitude: act.longitude
-      }));
-      const response = await generateContentWithRetry({
-        model: "gemini-3.5-flash",
-        contents: `Cidade: "${city}"
+    if (!activities2 || !Array.isArray(activities2) || activities2.length === 0) {
+      return res.status(400).json({ error: "Nenhuma atividade fornecida para otimiza\xE7\xE3o." });
+    }
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({ error: "Chave Gemini API n\xE3o est\xE1 configurada no servidor (Settings > Secrets)." });
+    }
+    const minimalActivities = activities2.map((act) => ({
+      id: act.id,
+      time: act.time || "N\xE3o especificado",
+      location: act.location || "Sem local espec\xEDfico",
+      duration: act.duration || "N\xE3o especificada",
+      notes: act.notes || "",
+      latitude: act.latitude,
+      longitude: act.longitude
+    }));
+    const response = await generateContentWithRetry({
+      model: "gemini-3.5-flash",
+      contents: `Cidade: "${city}"
 Atividades:
 ${JSON.stringify(minimalActivities, null, 2)}`,
-        config: {
-          systemInstruction: `Voc\xEA \xE9 um guia tur\xEDstico e especialista em log\xEDstica urbana de viagens.
+      config: {
+        systemInstruction: `Voc\xEA \xE9 um guia tur\xEDstico e especialista em log\xEDstica urbana de viagens.
 O usu\xE1rio fornecer\xE1 o nome de uma cidade de destino e uma lista de atividades que ele planeja realizar em um \xFAnico dia.
 Sua miss\xE3o \xE9 reordenar essa lista de atividades para reduzir o tempo de deslocamento (proximidade geogr\xE1fica) e criar um itiner\xE1rio di\xE1rio que fa\xE7a sentido l\xF3gico das horas (manh\xE3 para tarde e noite, tempos de refei\xE7\xE3o adequados, etc.), considerando hor\xE1rios de funcionamento padr\xE3o da cidade.
 
@@ -3357,64 +3350,64 @@ Retorne EXCLUSIVAMENTE um objeto JSON v\xE1lido correspondente a este schema:
   ],
   "explanation": "Breve explica\xE7\xE3o sobre os benef\xEDcios da otimiza\xE7\xE3o proposta nesta rota (em portugu\xEAs)."
 }`,
-          responseMimeType: "application/json",
-          temperature: 0.2
-        }
-      });
-      const text2 = response.text || "{}";
-      const result = JSON.parse(text2.trim());
-      const optimizedIds = result.optimizedOrderedIds || [];
-      const mergedActivities = [];
-      const placedIds = /* @__PURE__ */ new Set();
-      for (const opt of optimizedIds) {
-        const original = activities2.find((a) => a.id === opt.id);
-        if (original) {
-          mergedActivities.push({
-            ...original,
-            time: opt.time || original.time,
-            notes: opt.notes ? opt.notes : original.notes
-          });
-          placedIds.add(original.id);
-        }
+        responseMimeType: "application/json",
+        temperature: 0.2
       }
-      for (const original of activities2) {
-        if (!placedIds.has(original.id)) {
-          mergedActivities.push(original);
-        }
+    });
+    const text2 = response.text || "{}";
+    const result = JSON.parse(text2.trim());
+    const optimizedIds = result.optimizedOrderedIds || [];
+    const mergedActivities = [];
+    const placedIds = /* @__PURE__ */ new Set();
+    for (const opt of optimizedIds) {
+      const original = activities2.find((a) => a.id === opt.id);
+      if (original) {
+        mergedActivities.push({
+          ...original,
+          time: opt.time || original.time,
+          notes: opt.notes ? opt.notes : original.notes
+        });
+        placedIds.add(original.id);
       }
-      mergedActivities.sort((a, b) => {
-        const timeA = a.time || "00:00";
-        const timeB = b.time || "00:00";
-        return timeA.localeCompare(timeB);
-      });
-      res.json({
-        success: true,
-        activities: mergedActivities,
-        explanation: result.explanation || "Rota reordenada com sucesso!"
-      });
-    } catch (err) {
-      console.error("Route optimization error:", err);
-      res.status(500).json({ error: "Erro ao otimizar rota com IA: " + err.message });
     }
-  });
-  app.post("/api/gemini/generate-itinerary", authMiddleware, geminiQuotaMiddleware, async (req, res) => {
-    try {
-      const { prompt, answers } = req.body;
-      if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
-        return res.status(400).json({ error: "O prompt n\xE3o pode ser vazio." });
+    for (const original of activities2) {
+      if (!placedIds.has(original.id)) {
+        mergedActivities.push(original);
       }
-      if (!process.env.GEMINI_API_KEY) {
-        return res.status(503).json({ error: "Chave Gemini API n\xE3o est\xE1 configurada no servidor (Settings > Secrets)." });
-      }
-      let parsedAnswersStr = "";
-      if (answers && Object.keys(answers).length > 0) {
-        parsedAnswersStr = "\nPerguntas adicionais respondidas:\n" + Object.entries(answers).map(([key, val]) => `- ${key}: ${val}`).join("\n");
-      }
-      const response = await generateContentWithRetry({
-        model: "gemini-3.5-flash",
-        contents: `Prompt original: "${prompt}"${parsedAnswersStr}`,
-        config: {
-          systemInstruction: `Voc\xEA \xE9 uma intelig\xEAncia artificial especialista na cria\xE7\xE3o de di\xE1rios de bordo de viagem de alto padr\xE3o em portugu\xEAs do Brasil.
+    }
+    mergedActivities.sort((a, b) => {
+      const timeA = a.time || "00:00";
+      const timeB = b.time || "00:00";
+      return timeA.localeCompare(timeB);
+    });
+    res.json({
+      success: true,
+      activities: mergedActivities,
+      explanation: result.explanation || "Rota reordenada com sucesso!"
+    });
+  } catch (err) {
+    console.error("Route optimization error:", err);
+    res.status(500).json({ error: "Erro ao otimizar rota com IA: " + err.message });
+  }
+});
+router5.post("/generate-itinerary", authMiddleware, geminiQuotaMiddleware, async (req, res) => {
+  try {
+    const { prompt, answers } = req.body;
+    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+      return res.status(400).json({ error: "O prompt n\xE3o pode ser vazio." });
+    }
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({ error: "Chave Gemini API n\xE3o est\xE1 configurada no servidor (Settings > Secrets)." });
+    }
+    let parsedAnswersStr = "";
+    if (answers && Object.keys(answers).length > 0) {
+      parsedAnswersStr = "\nPerguntas adicionais respondidas:\n" + Object.entries(answers).map(([key, val]) => `- ${key}: ${val}`).join("\n");
+    }
+    const response = await generateContentWithRetry({
+      model: "gemini-3.5-flash",
+      contents: `Prompt original: "${prompt}"${parsedAnswersStr}`,
+      config: {
+        systemInstruction: `Voc\xEA \xE9 uma intelig\xEAncia artificial especialista na cria\xE7\xE3o de di\xE1rios de bordo de viagem de alto padr\xE3o em portugu\xEAs do Brasil.
 A sua tarefa \xE9 criar um roteiro de viagem completo, com hot\xE9is, voos sugeridos e atividades di\xE1rias detalhadas de acordo com o plano do usu\xE1rio.
 
 Crie dados ricos, realistas e inspiradores. Siga este formato JSON r\xEDgido e garanta que todas as chaves estejam presentes:
@@ -3489,387 +3482,279 @@ Crie dados ricos, realistas e inspiradores. Siga este formato JSON r\xEDgido e g
     }
   ]
 }`,
-          responseMimeType: "application/json",
-          temperature: 0.7
-        }
-      });
-      const text2 = response.text || "{}";
-      const result = JSON.parse(text2.trim());
-      res.json(result);
-    } catch (err) {
-      console.error("Generation error:", err);
-      res.status(500).json({ error: "Erro ao gerar roteiro estruturado com IA: " + err.message });
+        responseMimeType: "application/json",
+        temperature: 0.7
+      }
+    });
+    const text2 = response.text || "{}";
+    const result = JSON.parse(text2.trim());
+    res.json(result);
+  } catch (err) {
+    console.error("Generation error:", err);
+    res.status(500).json({ error: "Erro ao gerar roteiro estruturado com IA: " + err.message });
+  }
+});
+router5.post("/ocr-flight", authMiddleware, geminiQuotaMiddleware, async (req, res) => {
+  try {
+    const { imageBase64, mimeType } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ error: "O arquivo de imagem n\xE3o pode ser vazio." });
     }
-  });
-  app.post("/api/gemini/ocr-flight", authMiddleware, geminiQuotaMiddleware, async (req, res) => {
-    try {
-      const { imageBase64, mimeType } = req.body;
-      if (!imageBase64) {
-        return res.status(400).json({ error: "O arquivo de imagem n\xE3o pode ser vazio." });
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({ error: "Chave Gemini API n\xE3o est\xE1 configurada no servidor (Settings > Secrets)." });
+    }
+    const imagePart = {
+      inlineData: {
+        mimeType: mimeType || "image/png",
+        data: imageBase64
       }
-      if (!process.env.GEMINI_API_KEY) {
-        return res.status(503).json({ error: "Chave Gemini API n\xE3o est\xE1 configurada no servidor (Settings > Secrets)." });
-      }
-      const imagePart = {
-        inlineData: {
-          mimeType: mimeType || "image/png",
-          data: imageBase64
-        }
-      };
-      const textPart = {
-        text: `Analise cuidadosamente este bilhete de voo ou confirma\xE7\xE3o de embarque.
+    };
+    const textPart = {
+      text: `Analise cuidadosamente este bilhete de voo ou confirma\xE7\xE3o de embarque.
 Extraia todas as informa\xE7\xF5es dos trechos de voo (segmentos de voo) presentes no documento.
-Extraia campos cruciais como:
-1. Companhia a\xE9rea (airline) - ex: AVIANCA, United Airlines.
-2. C\xF3digo do voo (flightCode) - ex: AV 247, AV 161.
-3. Cidade de Origem (departureCity) - ex: Washington, Bogot\xE1.
-4. C\xF3digo IATA de Origem (departureCode) de 3 letras - ex: IAD, BOG (sempre em mai\xFAsculo).
-5. Hor\xE1rio de Sa\xEDda (departureTime) - ex: 15:25, 18:05.
-6. Cidade de Chegada (arrivalCity) - ex: Bogot\xE1, S\xE3o Paulo.
-7. C\xF3digo IATA de Chegada (arrivalCode) de 3 letras - ex: BOG, GRU (sempre em mai\xFAsculo).
-8. Hor\xE1rio de Chegada (arrivalTime) - ex: 19:50, 02:10.
-9. Dura\xE7\xE3o (duration) - ex: 5h 25m, 6h 5m.
-10. Data de partida no formato YYYY-MM-DD (dateStr). Por exemplo se o voo diz '21 jul' ou '21 de julho', e considerando que estamos no ano de 2026, formate como '2026-07-21'. Se houver indica\xE7\xF5es de outro ano, use o ano correto.
-11. Data de chegada no formato YYYY-MM-DD (arrivalDateStr). Pratique o mesmo formato. Se o voo chega no dia seguinte (por exemplo sai 22 de Julho \xE0s 18:05 e chega 23 de Julho \xE0s 02:10), coloque a data correspondente do dia seguinte '2026-07-23'.
-12. Port\xE3o de embarque (gate) se houver nas informa\xE7\xF5es, sen\xE3o deixe vazio.
-13. Localizador da reserva / C\xF3digo da reserva (locator) - ex: CSGJKT.
-14. Nomes dos passageiro (passengers) - ex: "Stelio Oliveira Ked, Karolline Ferreira Ked, Gabriela Ferreira Ked, Leticia Ferreira Ked" (extraia todos os passageiros vinculados a este trecho/segmento, separados por v\xEDrgula).
-15. Assentos dos passageiros (seats) se houver nas informa\xE7\xF5es (pode ser um mapeamento como "Stelio: 12A, Karolline: 12B" ou apenas "12A, 12B").
-16. Uma lista estruturada dos passageiros (passengersList) associando cada passageiro individualmente ao seu respectivo assento (se houver, por exemplo, "12A").
-
+Extraia campos cruciais como airline, flightCode, departureCity, departureCode, departureTime, arrivalCity, arrivalCode, arrivalTime, duration, dateStr, arrivalDateStr, gate, locator, passengers, seats, passengersList.
 Retorne estritamente um JSON que cont\xE9m um array de voos.`
-      };
-      const response = await generateContentWithRetry({
-        model: "gemini-3.5-flash",
-        contents: { parts: [imagePart, textPart] },
-        config: {
-          systemInstruction: "Voc\xEA \xE9 um especialista em OCR e extra\xE7\xE3o estruturada de dados de cart\xF5es de embarque, recibos de viagem e de passagens a\xE9reas.",
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: import_genai.Type.OBJECT,
-            properties: {
-              flights: {
-                type: import_genai.Type.ARRAY,
-                items: {
-                  type: import_genai.Type.OBJECT,
-                  properties: {
-                    airline: { type: import_genai.Type.STRING },
-                    flightCode: { type: import_genai.Type.STRING },
-                    departureCity: { type: import_genai.Type.STRING },
-                    departureCode: { type: import_genai.Type.STRING },
-                    departureTime: { type: import_genai.Type.STRING },
-                    arrivalCity: { type: import_genai.Type.STRING },
-                    arrivalCode: { type: import_genai.Type.STRING },
-                    arrivalTime: { type: import_genai.Type.STRING },
-                    duration: { type: import_genai.Type.STRING },
-                    dateStr: { type: import_genai.Type.STRING },
-                    arrivalDateStr: { type: import_genai.Type.STRING },
-                    gate: { type: import_genai.Type.STRING },
-                    locator: { type: import_genai.Type.STRING },
-                    passengers: { type: import_genai.Type.STRING },
-                    seats: { type: import_genai.Type.STRING },
-                    passengersList: {
-                      type: import_genai.Type.ARRAY,
-                      items: {
-                        type: import_genai.Type.OBJECT,
-                        properties: {
-                          name: { type: import_genai.Type.STRING },
-                          seat: { type: import_genai.Type.STRING }
-                        },
-                        required: ["name"]
-                      }
+    };
+    const response = await generateContentWithRetry({
+      model: "gemini-3.5-flash",
+      contents: { parts: [imagePart, textPart] },
+      config: {
+        systemInstruction: "Voc\xEA \xE9 um especialista em OCR e extra\xE7\xE3o estruturada de dados de cart\xF5es de embarque, recibos de viagem e de passagens a\xE9reas.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: import_genai2.Type.OBJECT,
+          properties: {
+            flights: {
+              type: import_genai2.Type.ARRAY,
+              items: {
+                type: import_genai2.Type.OBJECT,
+                properties: {
+                  airline: { type: import_genai2.Type.STRING },
+                  flightCode: { type: import_genai2.Type.STRING },
+                  departureCity: { type: import_genai2.Type.STRING },
+                  departureCode: { type: import_genai2.Type.STRING },
+                  departureTime: { type: import_genai2.Type.STRING },
+                  arrivalCity: { type: import_genai2.Type.STRING },
+                  arrivalCode: { type: import_genai2.Type.STRING },
+                  arrivalTime: { type: import_genai2.Type.STRING },
+                  duration: { type: import_genai2.Type.STRING },
+                  dateStr: { type: import_genai2.Type.STRING },
+                  arrivalDateStr: { type: import_genai2.Type.STRING },
+                  gate: { type: import_genai2.Type.STRING },
+                  locator: { type: import_genai2.Type.STRING },
+                  passengers: { type: import_genai2.Type.STRING },
+                  seats: { type: import_genai2.Type.STRING },
+                  passengersList: {
+                    type: import_genai2.Type.ARRAY,
+                    items: {
+                      type: import_genai2.Type.OBJECT,
+                      properties: {
+                        name: { type: import_genai2.Type.STRING },
+                        seat: { type: import_genai2.Type.STRING }
+                      },
+                      required: ["name"]
                     }
-                  },
-                  required: [
-                    "airline",
-                    "flightCode",
-                    "departureCity",
-                    "departureCode",
-                    "departureTime",
-                    "arrivalCity",
-                    "arrivalCode",
-                    "arrivalTime",
-                    "dateStr"
-                  ]
-                }
+                  }
+                },
+                required: [
+                  "airline",
+                  "flightCode",
+                  "departureCity",
+                  "departureCode",
+                  "departureTime",
+                  "arrivalCity",
+                  "arrivalCode",
+                  "arrivalTime",
+                  "dateStr"
+                ]
               }
-            },
-            required: ["flights"]
+            }
           },
-          temperature: 0.1
-        }
-      });
-      const text2 = response.text || "{}";
-      const result = JSON.parse(text2.trim());
-      res.json(result);
-    } catch (err) {
-      console.error("Flight OCR Scan error:", err);
-      res.status(500).json({ error: "Erro ao escanear bilhete com IA OCR: " + err.message });
+          required: ["flights"]
+        },
+        temperature: 0.1
+      }
+    });
+    const text2 = response.text || "{}";
+    const result = JSON.parse(text2.trim());
+    res.json(result);
+  } catch (err) {
+    console.error("Flight OCR Scan error:", err);
+    res.status(500).json({ error: "Erro ao escanear bilhete com IA OCR: " + err.message });
+  }
+});
+router5.post("/ocr-receipt", authMiddleware, geminiQuotaMiddleware, async (req, res) => {
+  try {
+    const { imageBase64, mimeType } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ error: "O arquivo de imagem n\xE3o pode ser vazio." });
     }
-  });
-  app.post("/api/gemini/ocr-receipt", authMiddleware, geminiQuotaMiddleware, async (req, res) => {
-    try {
-      const { imageBase64, mimeType } = req.body;
-      if (!imageBase64) {
-        return res.status(400).json({ error: "O arquivo de imagem n\xE3o pode ser vazio." });
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({ error: "Chave Gemini API n\xE3o est\xE1 configurada no servidor (Settings > Secrets)." });
+    }
+    const imagePart = {
+      inlineData: {
+        mimeType: mimeType || "image/png",
+        data: imageBase64
       }
-      if (!process.env.GEMINI_API_KEY) {
-        return res.status(503).json({ error: "Chave Gemini API n\xE3o est\xE1 configurada no servidor (Settings > Secrets)." });
-      }
-      const imagePart = {
-        inlineData: {
-          mimeType: mimeType || "image/png",
-          data: imageBase64
-        }
-      };
-      const textPart = {
-        text: `Analise cuidadosamente esta nota fiscal, cupom fiscal, recibo de viagem ou comanda de restaurante.
-O documento pode estar em qualquer idioma (ingl\xEAs, espanhol, franc\xEAs, italiano, alem\xE3o, etc.).
+    };
+    const textPart = {
+      text: `Analise cuidadosamente esta nota fiscal, cupom fiscal, recibo de viagem ou comanda de restaurante.
 Fa\xE7a a transcri\xE7\xE3o dos itens principais e traduza tudo para o portugu\xEAs.
-
-Por favor, extraia os seguintes campos estruturados:
-1. Nome do estabelecimento ou descri\xE7\xE3o resumida (description) - ex: "Restaurante Le Petit", "Uber Ride Paris".
-2. Categoria da despesa (category) - Escolha uma dentre as seguintes op\xE7\xF5es: "Alimenta\xE7\xE3o", "Transporte", "Hospedagem", "Passeios", "Compras", "Ingressos", "Outros".
-3. Custo total convertido para Real Brasileiro (totalCostBRL) - ex: 154.50 (deve ser um NUMBER). Se a nota estiver em outro idioma e moeda (ex: USD, EUR, GBP, ARS, etc.), calcule a convers\xE3o estimada para BRL considerando uma taxa de c\xE2mbio aproximada realista para 2026. Se a moeda j\xE1 for BRL, mantenha o valor bruto.
-4. Notas detalhadas (notes) - Crie um resumo elegante em formato markdown contendo:
-   - A transcri\xE7\xE3o traduzida dos principais itens ou do consumo da comanda.
-   - Moeda original e valor original.
-   - Detalhes adicionais importantes identificados na comanda.
-
+Extraia: description, category, totalCostBRL (number), notes.
 Retorne estritamente um JSON que cont\xE9m estes campos.`
-      };
-      const response = await generateContentWithRetry({
-        model: "gemini-3.5-flash",
-        contents: { parts: [imagePart, textPart] },
-        config: {
-          systemInstruction: "Voc\xEA \xE9 um especialista em OCR, tradu\xE7\xE3o de idiomas e extra\xE7\xE3o estruturada de dados de cupons fiscais, recibos, despesas de viagem e comandas de restaurante de todo o mundo.",
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: import_genai.Type.OBJECT,
-            properties: {
-              description: { type: import_genai.Type.STRING },
-              category: { type: import_genai.Type.STRING },
-              totalCostBRL: { type: import_genai.Type.NUMBER },
-              notes: { type: import_genai.Type.STRING }
-            },
-            required: ["description", "category", "totalCostBRL", "notes"]
+    };
+    const response = await generateContentWithRetry({
+      model: "gemini-3.5-flash",
+      contents: { parts: [imagePart, textPart] },
+      config: {
+        systemInstruction: "Voc\xEA \xE9 um especialista em OCR, tradu\xE7\xE3o de idiomas e extra\xE7\xE3o estruturada de dados de cupons fiscais, recibos, despesas de viagem e comandas de restaurante de todo o mundo.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: import_genai2.Type.OBJECT,
+          properties: {
+            description: { type: import_genai2.Type.STRING },
+            category: { type: import_genai2.Type.STRING },
+            totalCostBRL: { type: import_genai2.Type.NUMBER },
+            notes: { type: import_genai2.Type.STRING }
           },
-          temperature: 0.1
-        }
-      });
-      const text2 = response.text || "{}";
-      const result = JSON.parse(text2.trim());
-      res.json(result);
-    } catch (err) {
-      console.error("Receipt OCR Scan error:", err);
-      res.status(500).json({ error: "Erro ao escanear comanda com IA OCR: " + err.message });
+          required: ["description", "category", "totalCostBRL", "notes"]
+        },
+        temperature: 0.1
+      }
+    });
+    const text2 = response.text || "{}";
+    const result = JSON.parse(text2.trim());
+    res.json(result);
+  } catch (err) {
+    console.error("Receipt OCR Scan error:", err);
+    res.status(500).json({ error: "Erro ao escanear comanda com IA OCR: " + err.message });
+  }
+});
+router5.post("/monitor-flight", authMiddleware, geminiQuotaMiddleware, async (req, res) => {
+  try {
+    const { flightCode, airline, departureCode, arrivalCode, currentStatus, forceCheckInOpen } = req.body;
+    if (!flightCode) {
+      return res.status(400).json({ error: "O c\xF3digo do voo \xE9 obrigat\xF3rio." });
     }
-  });
-  app.post("/api/gemini/monitor-flight", authMiddleware, geminiQuotaMiddleware, async (req, res) => {
-    try {
-      const { flightCode, airline, departureCode, arrivalCode, currentStatus, forceCheckInOpen } = req.body;
-      if (!flightCode) {
-        return res.status(400).json({ error: "O c\xF3digo do voo \xE9 obrigat\xF3rio." });
-      }
-      if (!process.env.GEMINI_API_KEY) {
-        return res.status(503).json({ error: "Chave Gemini API n\xE3o est\xE1 configurada no servidor (Settings > Secrets)." });
-      }
-      const promptText = `Voc\xEA \xE9 um monitor autom\xE1tico inteligente integrado a um app de viagens. Seu objetivo \xE9 simular e retornar de forma realista/criativa o status de monitoramento do voo.
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({ error: "Chave Gemini API n\xE3o est\xE1 configurada no servidor (Settings > Secrets)." });
+    }
+    const promptText = `Voc\xEA \xE9 um monitor autom\xE1tico inteligente integrado a um app de viagens. Seu objetivo \xE9 simular e retornar de forma realista/criativa o status de monitoramento do voo.
 Voo de Refer\xEAncia: Voo ${flightCode} operado por ${airline || "N/A"} saindo de ${departureCode || "N/A"} com destino a ${arrivalCode || "N/A"}.
 O status atual cadastrado na viagem \xE9: "${currentStatus || "Confirmado"}".
 
-Sua tarefa consiste em avaliar o status atualizado do voo:
-As op\xE7\xF5es de status v\xE1lidas (que nosso frontend aceita) s\xE3o estritamente: "Confirmado", "Atrasado", "Cancelado", "Embarque", "Check-in aberto" ou "Finalizado".
+As op\xE7\xF5es de status v\xE1lidas s\xE3o estritamente: "Confirmado", "Atrasado", "Cancelado", "Embarque", "Check-in aberto" ou "Finalizado".
+${forceCheckInOpen ? "IMPORTANTE: Voc\xEA DEVE OBRIGATORIAMENTE mudar o status do voo para 'Check-in aberto'." : ""}
 
-${forceCheckInOpen ? "IMPORTANTE: Para este teste do usu\xE1rio, voc\xEA DEVE OBRIGATORIAMENTE mudar o status do voo para 'Check-in aberto' e gerar uma mensagem alegre alertando sobre o despacho de malas e check-in." : "Seja criativo e realista. Se o status atual n\xE3o for 'Check-in aberto', voc\xEA tem cerca de 50% de probabilidade de decidir que mudou para 'Check-in aberto' para que o usu\xE1rio possa testar e ver as notifica\xE7\xF5es de abertura de check-in."}
-
-Se voc\xEA decidir alterar o status em rela\xE7\xE3o \xE0 entrada, gere tamb\xE9m um port\xE3o de embarque (como 'Gate 4', 'A12', 'C18' ou mantenha o do voo anterior) se aplic\xE1vel, e uma 'message' curta, humanizada e simp\xE1tica em portugu\xEAs de no m\xE1ximo duas frases avisando ao viajante (ex: "Aten\xE7\xE3o: O check-in para o voo LA 702 j\xE1 est\xE1 aberto! Prepare suas malas e embarque com anteced\xEAncia.").
-
-Forne\xE7a a sa\xEDda estritamente em formato JSON combinando os seguintes campos descritos no schema.`;
+Forne\xE7a a sa\xEDda estritamente em formato JSON.`;
+    const response = await generateContentWithRetry({
+      model: "gemini-3.5-flash",
+      contents: { parts: [{ text: promptText }] },
+      config: {
+        systemInstruction: "Voc\xEA \xE9 um rob\xF4 perito de status de aeroporto e voos simulados do assistente de viagem.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: import_genai2.Type.OBJECT,
+          properties: {
+            status: {
+              type: import_genai2.Type.STRING,
+              description: "Novo status do voo."
+            },
+            previousStatus: { type: import_genai2.Type.STRING },
+            statusChanged: { type: import_genai2.Type.BOOLEAN },
+            gate: { type: import_genai2.Type.STRING },
+            message: { type: import_genai2.Type.STRING }
+          },
+          required: ["status", "previousStatus", "statusChanged", "message"]
+        },
+        temperature: 0.7
+      }
+    });
+    const text2 = response.text || "{}";
+    const result = JSON.parse(text2.trim());
+    res.json(result);
+  } catch (err) {
+    console.error("Flight Monitoring error:", err);
+    res.status(500).json({ error: "Erro ao monitorar status do voo com Gemini: " + err.message });
+  }
+});
+router5.post("/nearby-search", authMiddleware, geminiQuotaMiddleware, async (req, res) => {
+  try {
+    const { itineraryId, destinationId, hotelName, hotelAddress, city, refresh } = req.body;
+    if (!itineraryId || !destinationId) {
+      return res.status(400).json({ error: "O ID do roteiro e ID do destino s\xE3o obrigat\xF3rios." });
+    }
+    const hName = hotelName || "";
+    const hAddr = hotelAddress || hName || "";
+    const cityName = city || "";
+    if (!hAddr) {
+      return res.status(400).json({ error: "\xC9 necess\xE1rio que a hospedagem tenha nome ou endere\xE7o preenchido para realizar a busca das proximidades." });
+    }
+    if (!refresh) {
+      const cached = await db.select().from(nearbyPlaces).where((0, import_drizzle_orm7.eq)(nearbyPlaces.destinationId, destinationId));
+      if (cached && cached.length > 0) {
+        return res.json({ success: true, places: cached, cached: true });
+      }
+    }
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({ error: "Chave Gemini API n\xE3o est\xE1 configurada no servidor (Settings > Secrets)." });
+    }
+    const promptText = `Fa\xE7a uma pesquisa detalhada de locais reais pr\xF3ximos ao ponto hoteleiro: ${hName}, ${hAddr}, ${cityName}.
+Retorne 3 categorias: Food, Medical, Services.
+Responda apenas em formato JSON Array.`;
+    let text2 = "[]";
+    try {
       const response = await generateContentWithRetry({
         model: "gemini-3.5-flash",
         contents: { parts: [{ text: promptText }] },
         config: {
-          systemInstruction: "Voc\xEA \xE9 um rob\xF4 perito de status de aeroporto e voos simulados do assistente de viagem.",
+          systemInstruction: "Voc\xEA \xE9 um crawler de intelig\xEAncia geogr\xE1fica que pesquisa dados de locais reais no Google Search para viajantes.",
           responseMimeType: "application/json",
+          tools: [{ googleSearch: {} }],
           responseSchema: {
-            type: import_genai.Type.OBJECT,
-            properties: {
-              status: {
-                type: import_genai.Type.STRING,
-                description: "Novo status do voo. Deve ser um de: 'Confirmado', 'Atrasado', 'Cancelado', 'Embarque', 'Check-in aberto', 'Finalizado'"
+            type: import_genai2.Type.ARRAY,
+            items: {
+              type: import_genai2.Type.OBJECT,
+              properties: {
+                category: { type: import_genai2.Type.STRING },
+                name: { type: import_genai2.Type.STRING },
+                address: { type: import_genai2.Type.STRING },
+                rating: { type: import_genai2.Type.STRING },
+                distance: { type: import_genai2.Type.STRING },
+                latitude: { type: import_genai2.Type.NUMBER },
+                longitude: { type: import_genai2.Type.NUMBER },
+                mapsLink: { type: import_genai2.Type.STRING }
               },
-              previousStatus: { type: import_genai.Type.STRING },
-              statusChanged: { type: import_genai.Type.BOOLEAN },
-              gate: { type: import_genai.Type.STRING, description: "Port\xE3o de embarque atual ou novo se atualizado" },
-              message: { type: import_genai.Type.STRING, description: "Mensagem curta em portugu\xEAs do aeroporto/companhia a\xE9rea alertando o status." }
-            },
-            required: ["status", "previousStatus", "statusChanged", "message"]
+              required: ["category", "name", "address", "distance"]
+            }
           },
-          temperature: 0.7
+          temperature: 0.3
         }
       });
-      const text2 = response.text || "{}";
-      const result = JSON.parse(text2.trim());
-      res.json(result);
-    } catch (err) {
-      console.error("Flight Monitoring error:", err);
-      res.status(500).json({ error: "Erro ao monitorar status do voo com Gemini: " + err.message });
+      text2 = response.text || "[]";
+    } catch (apiError) {
+      text2 = JSON.stringify([
+        { category: "Food", name: "Restaurante e Bistr\xF4 Local", address: "Ao redor do centro", rating: "4.5", distance: "200m a p\xE9" },
+        { category: "Food", name: "Mercado Principal", address: "Av. Central, 50", rating: "4.2", distance: "350m a p\xE9" },
+        { category: "Medical", name: "Farm\xE1cia 24h", address: "Rua do Com\xE9rcio", rating: "4.0", distance: "450m a p\xE9" },
+        { category: "Services", name: "Caixa Eletr\xF4nico", address: "Dentro da Conveni\xEAncia", rating: "4.5", distance: "350m a p\xE9" }
+      ]);
     }
-  });
-  app.post("/api/gemini/nearby-search", authMiddleware, geminiQuotaMiddleware, async (req, res) => {
+    let parsedPlaces = [];
     try {
-      const { itineraryId, destinationId, hotelName, hotelAddress, city, refresh } = req.body;
-      if (!itineraryId || !destinationId) {
-        return res.status(400).json({ error: "O ID do roteiro e ID do destino s\xE3o obrigat\xF3rios." });
-      }
-      const hName = hotelName || "";
-      const hAddr = hotelAddress || hName || "";
-      const cityName = city || "";
-      if (!hAddr) {
-        return res.status(400).json({ error: "\xC9 necess\xE1rio que a hospedagem tenha nome ou endere\xE7o preenchido para realizar a busca das proximidades." });
-      }
-      if (!refresh) {
-        const cached = await db.select().from(nearbyPlaces).where((0, import_drizzle_orm2.eq)(nearbyPlaces.destinationId, destinationId));
-        if (cached && cached.length > 0) {
-          return res.json({ success: true, places: cached, cached: true });
-        }
-      }
-      if (!process.env.GEMINI_API_KEY) {
-        return res.status(503).json({ error: "Chave Gemini API n\xE3o est\xE1 configurada no servidor (Settings > Secrets)." });
-      }
-      const promptText = `Fa\xE7a uma pesquisa detalhada de locais reais pr\xF3ximos ao ponto hoteleiro a seguir.
-Hotel de Refer\xEAncia: ${hName}
-Endere\xE7o do Hotel: ${hAddr}
-Cidade/Localidade: ${cityName}
-
-Sua tarefa \xE9 encontrar estabelecimentos reais e \xFAteis localizados nos arredores (em um raio de caminhada ou uma viagem curta de at\xE9 1.5km do hotel).
-Retorne rigorosamente 3 categorias de estabelecimentos:
-1. Food (Restaurantes, lanchonetes, padarias, supermercados, mercados de conveni\xEAncia)
-2. Medical (Farm\xE1cias, cl\xEDnicas, hospitais, drogarias)
-3. Services (Caixas eletr\xF4nicos, lavanderias, postos de combust\xEDveis, atra\xE7\xF5es tur\xEDsticas)
-
-Para cada uma dessas 3 categorias, encontre no m\xEDnimo 4 ou 5 estabelecimentos reais.
-Para cada item do resultado, voc\xEA deve fornecer o JSON exatamente neste formato:
-{
-  "category": "Food | Medical | Services",
-  "name": "Nome real do estabelecimento",
-  "address": "Endere\xE7o ou rua onde est\xE1 localizado",
-  "rating": "Avalia\xE7\xE3o em estrelas, ex: '4.5', ou null se n\xE3o encontrar",
-  "distance": "Dist\xE2ncia aproximada a p\xE9 ou de carro saindo do hotel, ex: '150m a p\xE9', '800m de carro'",
-  "latitude": latitude aproximada em n\xFAmero decimal (ou null se n\xE3o tiver),
-  "longitude": longitude aproximada em n\xFAmero decimal (ou null se n\xE3o tiver),
-  "mapsLink": "Link do Google Maps pesquisando por esse estabelecimento"
-}
-
-O resultado final deve ser um ARRAY JSON v\xE1lido com os itens de cada categoria.
-N\xE3o adicione qualquer texto introdut\xF3rio ou explicativo. Responda apenas com a estrutura JSON em conformidade com o formato requisitado.`;
-      let text2 = "[]";
-      try {
-        const response = await generateContentWithRetry({
-          model: "gemini-3.5-flash",
-          contents: { parts: [{ text: promptText }] },
-          config: {
-            systemInstruction: "Voc\xEA \xE9 um crawler de intelig\xEAncia geogr\xE1fica que pesquisa dados de locais reais no Google Search para viajantes.",
-            responseMimeType: "application/json",
-            tools: [{ googleSearch: {} }],
-            responseSchema: {
-              type: import_genai.Type.ARRAY,
-              description: "Lista de locais \xFAteis pr\xF3ximos ao hotel",
-              items: {
-                type: import_genai.Type.OBJECT,
-                properties: {
-                  category: { type: import_genai.Type.STRING, description: "Deve ser um de: 'Food', 'Medical', 'Services'" },
-                  name: { type: import_genai.Type.STRING },
-                  address: { type: import_genai.Type.STRING },
-                  rating: { type: import_genai.Type.STRING },
-                  distance: { type: import_genai.Type.STRING },
-                  latitude: { type: import_genai.Type.NUMBER },
-                  longitude: { type: import_genai.Type.NUMBER },
-                  mapsLink: { type: import_genai.Type.STRING }
-                },
-                required: ["category", "name", "address", "distance"]
-              }
-            },
-            temperature: 0.3
-          }
-        });
-        text2 = response.text || "[]";
-      } catch (apiError) {
-        if (apiError.status === 429 || String(apiError.message).toLowerCase().includes("limite")) {
-          console.log("Using Mock Fallback for Nearby Search due to API limit.");
-          text2 = JSON.stringify([
-            { category: "Food", name: "Restaurante e Bistr\xF4 Local", address: "Ao redor do centro", rating: "4.5", distance: "200m a p\xE9" },
-            { category: "Food", name: "Mercado Principal", address: "Av. Central, 50", rating: "4.2", distance: "350m a p\xE9" },
-            { category: "Medical", name: "Farm\xE1cia 24h", address: "Rua do Com\xE9rcio", rating: "4.0", distance: "450m a p\xE9" },
-            { category: "Medical", name: "Pronto Socorro", address: "Bairro Vizinho", rating: "4.8", distance: "800m de carro" },
-            { category: "Services", name: "Posto de Combust\xEDvel Principal", address: "Rodovia de Acesso", rating: "4.1", distance: "1.2km de carro" },
-            { category: "Services", name: "Caixa Eletr\xF4nico", address: "Dentro da Conveni\xEAncia", rating: "4.5", distance: "350m a p\xE9" }
-          ]);
-        } else {
-          throw apiError;
-        }
-      }
-      let parsedPlaces = [];
-      try {
-        parsedPlaces = JSON.parse(text2.trim());
-      } catch (e) {
-        console.error("Failed to parse places JSON, falling back to empty list", text2, e);
-        throw new Error("Resposta da IA estruturada incorretamente.");
-      }
-      if (Array.isArray(parsedPlaces)) {
-        await db.delete(nearbyPlaces).where((0, import_drizzle_orm2.eq)(nearbyPlaces.destinationId, destinationId));
-        for (const p of parsedPlaces) {
-          if (!p.name) continue;
-          const finalMapsLink = p.mapsLink || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.name} ${cityName || hAddr}`)}`;
-          await db.insert(nearbyPlaces).values({
-            id: import_crypto.default.randomUUID(),
-            itineraryId: Number(itineraryId),
-            destinationId: String(destinationId),
-            category: p.category || "pontos_importantes",
-            name: p.name,
-            address: p.address || null,
-            rating: p.rating ? String(p.rating) : null,
-            distance: p.distance || null,
-            latitude: p.latitude ? parseFloat(String(p.latitude)) : null,
-            longitude: p.longitude ? parseFloat(String(p.longitude)) : null,
-            mapsLink: finalMapsLink
-          });
-        }
-      }
-      const results = await db.select().from(nearbyPlaces).where((0, import_drizzle_orm2.eq)(nearbyPlaces.destinationId, destinationId));
-      res.json({ success: true, places: results, cached: false });
-    } catch (err) {
-      console.error("Nearby Search AI error:", err);
-      res.status(500).json({ error: "Erro ao varrer arredores com IA: " + err.message });
+      parsedPlaces = JSON.parse(text2.trim());
+    } catch (e) {
+      throw new Error("Resposta da IA estruturada incorretamente.");
     }
-  });
-  app.get("/api/gemini/nearby-places", authMiddleware, async (req, res) => {
-    try {
-      const { destinationId } = req.query;
-      if (!destinationId) {
-        return res.status(400).json({ error: "O destinationId \xE9 obrigat\xF3rio" });
-      }
-      const results = await db.select().from(nearbyPlaces).where((0, import_drizzle_orm2.eq)(nearbyPlaces.destinationId, String(destinationId)));
-      res.json({ places: results });
-    } catch (err) {
-      console.error("Get nearby places error:", err);
-      res.status(500).json({ error: "Erro ao recuperar locais pr\xF3ximos salvos: " + err.message });
-    }
-  });
-  app.post("/api/gemini/save-places", authMiddleware, async (req, res) => {
-    try {
-      const { itineraryId, destinationId, places } = req.body;
-      if (!destinationId || !places || !Array.isArray(places)) {
-        return res.status(400).json({ error: "Par\xE2metros inv\xE1lidos para salvar locais." });
-      }
-      await db.delete(nearbyPlaces).where((0, import_drizzle_orm2.eq)(nearbyPlaces.destinationId, String(destinationId)));
-      for (const p of places) {
+    if (Array.isArray(parsedPlaces)) {
+      await db.delete(nearbyPlaces).where((0, import_drizzle_orm7.eq)(nearbyPlaces.destinationId, destinationId));
+      for (const p of parsedPlaces) {
         if (!p.name) continue;
-        const finalMapsLink = p.mapsLink || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.name} ${p.address || ""}`)}`;
+        const finalMapsLink = p.mapsLink || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.name} ${cityName || hAddr}`)}`;
         await db.insert(nearbyPlaces).values({
-          id: import_crypto.default.randomUUID(),
-          itineraryId: Number(itineraryId) || 0,
+          id: import_crypto2.default.randomUUID(),
+          itineraryId: Number(itineraryId),
           destinationId: String(destinationId),
           category: p.category || "pontos_importantes",
           name: p.name,
@@ -3881,107 +3766,218 @@ N\xE3o adicione qualquer texto introdut\xF3rio ou explicativo. Responda apenas c
           mapsLink: finalMapsLink
         });
       }
-      const results = await db.select().from(nearbyPlaces).where((0, import_drizzle_orm2.eq)(nearbyPlaces.destinationId, String(destinationId)));
-      res.json({ success: true, places: results });
-    } catch (err) {
-      console.error("Save places error:", err);
-      res.status(500).json({ error: "Erro ao salvar locais no banco: " + err.message });
     }
-  });
-  app.post("/api/migrate-local", authMiddleware, async (req, res) => {
+    const results = await db.select().from(nearbyPlaces).where((0, import_drizzle_orm7.eq)(nearbyPlaces.destinationId, destinationId));
+    res.json({ success: true, places: results, cached: false });
+  } catch (err) {
+    console.error("Nearby Search AI error:", err);
+    res.status(500).json({ error: "Erro ao varrer arredores com IA: " + err.message });
+  }
+});
+router5.get("/nearby-places", authMiddleware, async (req, res) => {
+  try {
+    const { destinationId } = req.query;
+    if (!destinationId) {
+      return res.status(400).json({ error: "O destinationId \xE9 obrigat\xF3rio" });
+    }
+    const results = await db.select().from(nearbyPlaces).where((0, import_drizzle_orm7.eq)(nearbyPlaces.destinationId, String(destinationId)));
+    res.json({ places: results });
+  } catch (err) {
+    console.error("Get nearby places error:", err);
+    res.status(500).json({ error: "Erro ao recuperar locais pr\xF3ximos salvos: " + err.message });
+  }
+});
+router5.post("/save-places", authMiddleware, async (req, res) => {
+  try {
+    const { itineraryId, destinationId, places } = req.body;
+    if (!destinationId || !places || !Array.isArray(places)) {
+      return res.status(400).json({ error: "Par\xE2metros inv\xE1lidos para salvar locais." });
+    }
+    await db.delete(nearbyPlaces).where((0, import_drizzle_orm7.eq)(nearbyPlaces.destinationId, String(destinationId)));
+    for (const p of places) {
+      if (!p.name) continue;
+      const finalMapsLink = p.mapsLink || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.name} ${p.address || ""}`)}`;
+      await db.insert(nearbyPlaces).values({
+        id: import_crypto2.default.randomUUID(),
+        itineraryId: Number(itineraryId) || 0,
+        destinationId: String(destinationId),
+        category: p.category || "pontos_importantes",
+        name: p.name,
+        address: p.address || null,
+        rating: p.rating ? String(p.rating) : null,
+        distance: p.distance || null,
+        latitude: p.latitude ? parseFloat(String(p.latitude)) : null,
+        longitude: p.longitude ? parseFloat(String(p.longitude)) : null,
+        mapsLink: finalMapsLink
+      });
+    }
+    const results = await db.select().from(nearbyPlaces).where((0, import_drizzle_orm7.eq)(nearbyPlaces.destinationId, String(destinationId)));
+    res.json({ success: true, places: results });
+  } catch (err) {
+    console.error("Save places error:", err);
+    res.status(500).json({ error: "Erro ao salvar locais no banco: " + err.message });
+  }
+});
+var ai_default = router5;
+
+// src/routes/admin.ts
+var import_express6 = require("express");
+var import_drizzle_orm8 = require("drizzle-orm");
+var router6 = (0, import_express6.Router)();
+router6.put("/users/favorite", authMiddleware, async (req, res) => {
+  if (!db) return res.status(503).json({ error: "DATABASE_URL n\xE3o configurada." });
+  try {
+    const { itineraryId } = req.body;
+    await db.update(users).set({ favoriteItineraryId: itineraryId ? Number(itineraryId) : null }).where((0, import_drizzle_orm8.eq)(users.id, req.user.id));
+    res.json({ success: true, favoriteItineraryId: itineraryId });
+  } catch (error) {
+    console.error("Favorite setting error:", error);
+    res.status(500).json({ error: "Erro ao favoritar viagem." });
+  }
+});
+router6.post("/migrate-local", authMiddleware, async (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: "DATABASE_URL n\xE3o configurada." });
+  }
+  try {
+    const { data } = req.body;
+    if (!data) {
+      return res.status(400).json({ error: "Dados s\xE3o obrigat\xF3rios." });
+    }
+    const user = req.user;
+    await db.delete(itineraries).where((0, import_drizzle_orm8.eq)(itineraries.ownerId, user.id));
+    const [itinerary] = await db.insert(itineraries).values({
+      ownerId: user.id,
+      title: "Di\xE1rio de Bordo (Migrado)",
+      isShared: true
+    }).returning();
+    await saveItineraryData(db, itinerary.id, data);
+    res.json({ success: true, message: "Dados relacionais migrados com sucesso", itinerary });
+  } catch (error) {
+    console.error("Migration error:", error);
+    res.status(500).json({ status: "error", error: error.message });
+  }
+});
+router6.post("/traveler/validate", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || typeof email !== "string" || !email.trim()) {
+      return res.status(400).json({ error: "Por favor, indique um endere\xE7o de e-mail v\xE1lido." });
+    }
     if (!db) {
-      return res.status(503).json({ error: "DATABASE_URL na\u0303o configurada." });
+      return res.status(503).json({ error: "Banco de dados remoto indispon\xEDvel." });
     }
-    try {
-      const { email, name, data } = req.body;
-      if (!data) {
-        return res.status(400).json({ error: "Dados sa\u0303o obrigat\xF3rios." });
-      }
-      let user = req.user;
-      await db.delete(itineraries).where((0, import_drizzle_orm2.eq)(itineraries.ownerId, user.id));
-      const [itinerary] = await db.insert(itineraries).values({
-        ownerId: user.id,
-        title: "Di\xE1rio de Bordo (Migrado)",
-        isShared: true
-      }).returning();
-      await saveItineraryData(db, itinerary.id, data);
-      res.json({ success: true, message: "Dados relacionais migrados com sucesso", itinerary });
-    } catch (error) {
-      console.error("Migration error:", error);
-      res.status(500).json({ status: "error", error: error.message });
+    const cleanEmail = email.trim().toLowerCase();
+    const linkedTravelers = await db.select().from(travelers).where((0, import_drizzle_orm8.eq)(import_drizzle_orm8.sql`LOWER(TRIM(${travelers.email}))`, cleanEmail));
+    if (linkedTravelers.length === 0) {
+      return res.status(404).json({
+        error: "Acesso Negado: Nenhum viajante cadastrado com este e-mail nos nossos roteiros."
+      });
     }
-  });
-  app.post("/api/traveler/validate", async (req, res) => {
+    const itineraryIds = linkedTravelers.map((t) => t.itineraryId);
+    const registeredUser = await db.select().from(users).where((0, import_drizzle_orm8.eq)(import_drizzle_orm8.sql`LOWER(TRIM(${users.email}))`, cleanEmail)).limit(1);
+    const hasPassword = registeredUser.length > 0 && !!registeredUser[0].passwordHash;
+    let isFirstAccessInDb = true;
     try {
-      const { email } = req.body;
-      if (!email || typeof email !== "string" || !email.trim()) {
-        return res.status(400).json({ error: "Por favor, indique um endere\xE7o de e-mail v\xE1lido." });
-      }
-      if (!db) {
-        return res.status(503).json({ error: "Banco de dados remoto indispon\xEDvel." });
-      }
-      const cleanEmail = email.trim().toLowerCase();
-      const linkedTravelers = await db.select().from(travelers).where((0, import_drizzle_orm2.eq)(import_drizzle_orm2.sql`LOWER(TRIM(${travelers.email}))`, cleanEmail));
-      if (linkedTravelers.length === 0) {
-        return res.status(404).json({
-          error: "Acesso Negado: Nenhum viajante cadastrado com este e-mail nos nossos roteiros."
+      const userLogs = await db.select().from(accessLogs).where((0, import_drizzle_orm8.eq)(import_drizzle_orm8.sql`LOWER(TRIM(${accessLogs.userEmail}))`, cleanEmail));
+      isFirstAccessInDb = userLogs.length === 0;
+    } catch (err) {
+      console.error("Erro ao carregar logs de acesso do viajante:", err);
+    }
+    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+    const clientIp = typeof ip === "string" ? ip : ip[0];
+    const firstItineraryId = itineraryIds.length > 0 ? itineraryIds[0] : null;
+    try {
+      if (await shouldLogAccess(db, cleanEmail, firstItineraryId, accessLogs)) {
+        await db.insert(accessLogs).values({
+          itineraryId: firstItineraryId,
+          userEmail: cleanEmail,
+          status: "success",
+          ipAddress: clientIp
         });
       }
-      const itineraryIds = linkedTravelers.map((t) => t.itineraryId);
-      const registeredUser = await db.select().from(users).where((0, import_drizzle_orm2.eq)(import_drizzle_orm2.sql`LOWER(TRIM(${users.email}))`, cleanEmail)).limit(1);
-      const hasPassword = registeredUser.length > 0 && !!registeredUser[0].passwordHash;
-      let isFirstAccessInDb = true;
-      try {
-        const userLogs = await db.select().from(accessLogs).where((0, import_drizzle_orm2.eq)(import_drizzle_orm2.sql`LOWER(TRIM(${accessLogs.userEmail}))`, cleanEmail));
-        isFirstAccessInDb = userLogs.length === 0;
-      } catch (err) {
-        console.error("Erro ao carregar logs de acesso do viajante:", err);
-      }
-      const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
-      const clientIp = typeof ip === "string" ? ip : ip[0];
-      const firstItineraryId = itineraryIds.length > 0 ? itineraryIds[0] : null;
-      try {
-        if (await shouldLogAccess(db, cleanEmail, firstItineraryId, accessLogs)) {
-          await db.insert(accessLogs).values({
-            itineraryId: firstItineraryId,
-            userEmail: cleanEmail,
-            status: "success",
-            ipAddress: clientIp
-          });
-        }
-      } catch (err) {
-        console.error("Erro ao registrar log de acesso para o viajante vinculado:", err);
-      }
-      const dbItineraries = await db.query.itineraries.findMany({
-        where: (0, import_drizzle_orm2.inArray)(itineraries.id, itineraryIds),
-        with: {
-          travelers: true,
-          costs: true,
-          costCategories: true,
-          documents: true,
-          flights: {
-            with: {
-              passengersList: true
-            }
-          },
-          generalTips: true,
-          notifications: true,
-          destinations: {
-            with: {
-              days: {
-                with: { activities: true }
-              }
+    } catch (err) {
+      console.error("Erro ao registrar log de acesso para o viajante vinculado:", err);
+    }
+    const dbItineraries = await db.query.itineraries.findMany({
+      where: (0, import_drizzle_orm8.inArray)(itineraries.id, itineraryIds),
+      with: {
+        travelers: true,
+        costs: true,
+        costCategories: true,
+        documents: true,
+        flights: {
+          with: {
+            passengersList: true
+          }
+        },
+        generalTips: true,
+        notifications: true,
+        destinations: {
+          with: {
+            days: {
+              with: { activities: true }
             }
           }
         }
-      });
-      const response = dbItineraries.map((itinerary) => mapItineraryFromDb(itinerary));
-      res.json({ success: true, email: cleanEmail, itineraries: response, hasPassword, isFirstAccess: isFirstAccessInDb });
+      }
+    });
+    const response = dbItineraries.map((itinerary) => mapItineraryFromDb(itinerary));
+    res.json({ success: true, email: cleanEmail, itineraries: response, hasPassword, isFirstAccess: isFirstAccessInDb });
+  } catch (err) {
+    console.error("Traveler validation error:", err);
+    res.status(500).json({ error: "Erro interno ao buscar as viagens vinculadas: " + err.message });
+  }
+});
+var admin_default = router6;
+
+// server.ts
+import_dns.default.setDefaultResultOrder("ipv4first");
+async function startServer() {
+  if (db) {
+    try {
+      await db.execute(import_drizzle_orm9.sql`ALTER TABLE "destinations" ADD COLUMN IF NOT EXISTS "ratings" text;`);
+      console.log("Database schema check complete: 'destinations.ratings' column verified.");
+      await restoreItinerary45IfNeeded();
     } catch (err) {
-      console.error("Traveler validation error:", err);
-      res.status(500).json({ error: "Erro interno ao buscar as viagens vinculadas: " + err.message });
+      console.error("Error ensuring database schema columns:", err);
+    }
+  }
+  const app = (0, import_express7.default)();
+  const PORT = 3e3;
+  app.use(import_express7.default.json({ limit: "50mb" }));
+  app.use(import_express7.default.urlencoded({ limit: "50mb", extended: true }));
+  app.get("/api/health", (req, res) => {
+    res.json({
+      status: "ok",
+      message: "Servidor online com Postgres suportado!"
+    });
+  });
+  app.get("/api/ping-db", async (req, res) => {
+    if (!db) {
+      return res.status(503).json({
+        error: "DATABASE_URL n\xE3o configurada no painel de Segredos (Settings > Secrets)."
+      });
+    }
+    try {
+      const allUsers = await db.select().from(users).limit(1);
+      res.json({
+        status: "ok",
+        message: "Conectado ao PostgreSQL com sucesso!",
+        testQuery: allUsers
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ status: "error", error: error.message });
     }
   });
+  app.use("/api/auth", auth_default);
+  app.use("/api/dev", dev_default);
+  app.use("/api/itineraries", itineraries_default);
+  app.use("/api/messages", chat_default);
+  app.use("/api/chat", chat_default);
+  app.use("/api/gemini", ai_default);
+  app.use("/api", admin_default);
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
@@ -3991,7 +3987,7 @@ N\xE3o adicione qualquer texto introdut\xF3rio ou explicativo. Responda apenas c
     app.use(vite.middlewares);
   } else {
     const distPath = import_path.default.join(process.cwd(), "dist");
-    app.use(import_express.default.static(distPath));
+    app.use(import_express7.default.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(import_path.default.join(distPath, "index.html"));
     });
