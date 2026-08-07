@@ -19,6 +19,8 @@ export const users = pgTable("users", {
   passwordResetToken: text("password_reset_token"),
   passwordResetExpires: timestamp("password_reset_expires"),
   favoriteItineraryId: integer("favorite_itinerary_id"),
+  isVerified: boolean("is_verified").default(true),
+  provider: text("provider").default("email"),
 });
 
 // Defining a travel itinerary table

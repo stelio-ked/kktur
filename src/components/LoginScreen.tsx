@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { auth, googleProvider } from "../utils/firebase";
+import { auth, googleProvider, appleProvider } from "../utils/firebase";
 import { signInWithPopup, signInWithRedirect, getRedirectResult } from "firebase/auth";
 import { 
   Lock, 
@@ -76,30 +76,32 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
     }
   };
 
-  // Poll for simulated e-mails when Google login/signup is active
+  // Poll for simulated e-mails when Google login/signup or email registration is active
   useEffect(() => {
-    let emailToPoll = useGoogle ? googleEmail : "";
+    let emailToPoll = useGoogle ? googleEmail : email;
     if (setupPasswordMode) {
       emailToPoll = setupEmail;
     }
     
-    if (emailToPoll && emailToPoll.toLowerCase().endsWith("@gmail.com")) {
+    if (emailToPoll && emailToPoll.includes("@")) {
       fetchSimulatedEmails(emailToPoll);
       const interval = setInterval(() => {
         fetchSimulatedEmails(emailToPoll);
       }, 3000);
       return () => clearInterval(interval);
     }
-  }, [useGoogle, googleEmail, setupPasswordMode, setupEmail]);
+  }, [useGoogle, googleEmail, email, setupPasswordMode, setupEmail]);
 
-  // Intercepting / Setup link from URL search query on mount
+  // Intercepting / Setup link or Email Verification link from URL search query on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const action = params.get("action");
     const token = params.get("token");
     if (action === "setup_password" && token) {
       handleActivateToken(token);
-      // Clear query params to make UI clean
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (action === "verify_email" && token) {
+      handleVerifyEmailToken(token);
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
@@ -139,6 +141,32 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
     handleRedirect();
   }, [onLogin]);
 
+  const handleVerifyEmailToken = async (tokenVal: string) => {
+    setError("");
+    setSuccessMsg("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/verify-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: tokenVal })
+      });
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || "Token de confirmação inválido ou expirado.");
+      }
+      
+      setSuccessMsg("Conta ativada com sucesso! Conectando ao sistema...");
+      localStorage.setItem("auth_token", data.token);
+      onLogin(data.token, data.user);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmitOrganizer = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -157,6 +185,12 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
       
       if (!res.ok) {
         throw new Error(data.error || "Erro de autenticação para Organizador");
+      }
+
+      if (isRegister && data.requiresVerification) {
+        setSuccessMsg(data.message || "E-mail de confirmação enviado! Acesse sua caixa de entrada (ou caixa simulada abaixo) para ativar a conta.");
+        fetchSimulatedEmails(email);
+        return;
       }
       
       localStorage.setItem("auth_token", data.token);
@@ -185,6 +219,7 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
         body: JSON.stringify({
           email: fbUser.email,
           name: fbUser.displayName || fbUser.email.split("@")[0],
+          provider: "google",
           firebaseUid: fbUser.uid
         })
       });
@@ -202,6 +237,47 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
         setError("O login foi cancelado. A janela de autenticação do Google foi fechada.");
       } else {
         setError(err.message || "Falha na autenticação via Firebase Google Auth.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFirebaseAppleLogin = async () => {
+    setError("");
+    setSuccessMsg("");
+    setLoading(true);
+    try {
+      const result = await signInWithPopup(auth, appleProvider);
+      const fbUser = result.user;
+      if (!fbUser.email) {
+        throw new Error("Não foi possível obter o e-mail da conta Apple através do Firebase.");
+      }
+
+      const res = await fetch("/api/auth/firebase-social-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: fbUser.email,
+          name: fbUser.displayName || fbUser.email.split("@")[0],
+          provider: "apple",
+          firebaseUid: fbUser.uid
+        })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Erro ao autenticar a sessão da Apple com o servidor.");
+      }
+
+      localStorage.setItem("auth_token", data.token);
+      onLogin(data.token, data.user);
+    } catch (err: any) {
+      console.error("Firebase Apple Auth Error:", err);
+      if (err.code === "auth/popup-closed-by-user") {
+        setError("O login foi cancelado. A janela de autenticação da Apple foi fechada.");
+      } else {
+        setError(err.message || "Falha na autenticação via Apple.");
       }
     } finally {
       setLoading(false);
@@ -519,260 +595,133 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
             <>
               {/* ORGANIZER ACCESS FLOW */}
               {accessMode === "planner" ? (
-                <>
-                  {useGoogle ? (
-                    /* GOOGLE GMAIL FLOW (REAL SECURE FIREBASE PROVIDER & SIMULATED SANDBOX DUAL-MODE) */
-                    <div className="space-y-4 animate-fadeIn">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-red-500 animate-ping inline-block" />
-                          <span className="text-[10px] font-black tracking-widest text-slate-450 uppercase">Autenticação Google</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUseGoogle(false);
-                            setError("");
-                            setSuccessMsg("");
-                          }}
-                          className="text-xs text-indigo-650 font-black hover:underline cursor-pointer flex items-center gap-1"
-                        >
-                          <ArrowLeft className="w-3 h-3" />
-                          <span>Senha Padrão</span>
-                        </button>
-                      </div>
+                <div className="space-y-4 animate-fadeIn">
+                  {/* Social Auth Buttons */}
+                  <div className="space-y-2.5">
+                    {/* Continuar com Google */}
+                    <button
+                      type="button"
+                      onClick={handleFirebaseGoogleLogin}
+                      disabled={loading}
+                      className="w-full cursor-pointer bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-extrabold text-xs py-3 rounded-2xl transition-all shadow-xs flex items-center justify-center gap-3 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+                    >
+                      <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                        <path
+                          fill="#4285F4"
+                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                        />
+                        <path
+                          fill="#EA4335"
+                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                        />
+                      </svg>
+                      <span>Continuar com Google</span>
+                    </button>
 
-                      {/* Google Auth Modality Selector */}
-                      <div className="flex border border-slate-200 p-1 bg-slate-50/80 rounded-2xl">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setGoogleFlowMode("simulated");
-                            setError("");
-                            setSuccessMsg("");
-                          }}
-                          className={`flex-1 py-2 text-[10px] font-black rounded-xl transition-all cursor-pointer flex flex-col items-center justify-center ${
-                            googleFlowMode === "simulated"
-                              ? "bg-white text-indigo-700 shadow-xs border border-indigo-100"
-                              : "text-slate-500 hover:text-slate-700 hover:bg-slate-100"
-                          }`}
-                        >
-                          <span>Modo Simulador</span>
-                          <span className="text-[8px] opacity-75 font-normal tracking-tight">Recomendado na pré-visualização</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setGoogleFlowMode("real");
-                            setError("");
-                            setSuccessMsg("");
-                          }}
-                          className={`flex-1 py-3 text-[10px] font-black rounded-xl transition-all cursor-pointer flex flex-col items-center justify-center ${
-                            googleFlowMode === "real"
-                              ? "bg-white text-indigo-700 shadow-xs border border-indigo-100"
-                              : "text-slate-500 hover:text-slate-700 hover:bg-slate-100"
-                          }`}
-                        >
-                          <span>Provedor Real</span>
-                          <span className="text-[8px] opacity-75 font-normal tracking-tight">Requer abrir em nova guia</span>
-                        </button>
-                      </div>
+                    {/* Continuar com Apple */}
+                    <button
+                      type="button"
+                      onClick={handleFirebaseAppleLogin}
+                      disabled={loading}
+                      className="w-full cursor-pointer bg-slate-900 hover:bg-slate-800 border border-slate-800 text-white font-extrabold text-xs py-3 rounded-2xl transition-all shadow-xs flex items-center justify-center gap-3 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+                    >
+                      <svg className="w-4 h-4 shrink-0 fill-current text-white" viewBox="0 0 170 170">
+                        <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-5.04.12-9.96-1.99-14.76-6.35-3.48-3.05-7.38-7.85-11.7-14.41-6.19-9.37-11.06-19.64-14.61-30.82-3.55-11.18-5.33-21.75-5.33-31.7 0-14.75 3.73-26.69 11.19-35.82 7.46-9.14 16.92-13.78 28.38-13.92 4.69 0 9.87 1.12 15.54 3.35 5.68 2.23 9.69 3.35 12.04 3.35 1.9 0 5.86-1.12 11.89-3.35 6.03-2.23 11.13-3.27 15.31-3.12 11.75.56 21.09 4.93 28.02 13.1-10.4 6.25-15.48 15.01-15.24 26.29.24 8.71 3.63 16.03 10.17 21.96 6.54 5.93 14.34 9.32 23.39 10.17-2.12 6.37-4.91 12.87-8.37 19.5zM119.22 30.14c0-7.25 2.65-14.18 7.95-20.78 5.3-6.61 11.97-10.5 20.01-11.69.12.98.18 1.83.18 2.56 0 7.37-2.73 14.42-8.19 21.14-5.46 6.72-12.16 10.73-20.1 12.03-.24-1.09-.36-2.17-.36-3.26z"/>
+                      </svg>
+                      <span>Continuar com Apple</span>
+                    </button>
+                  </div>
 
-                      {googleFlowMode === "simulated" ? (
-                        /* SIMULATED HIGH-FIDELITY GMAIL SANDBOX IMPLEMENTATION */
-                        <div className="space-y-4">
-                          <div className="p-3 bg-red-50/50 border border-red-100 rounded-2xl text-[11px] font-semibold text-slate-600 leading-relaxed space-y-1.5">
-                            <div className="flex items-center gap-1.5 text-red-800 font-extrabold text-[12px]">
-                              <Inbox className="w-4 h-4 text-red-500 shrink-0" />
-                              <span>Ambiente de Sandbox Conectado</span>
-                            </div>
-                            <p>
-                              Digite seu e-mail do Gmail para simular o comportamento exato de um login OAuth com token seguro. A caixa de entrada simulada aparecerá no rodapé desta tela!
-                            </p>
-                          </div>
+                  {/* Divider */}
+                  <div className="relative flex py-1 items-center">
+                    <div className="flex-grow border-t border-slate-200" />
+                    <span className="flex-shrink mx-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">ou</span>
+                    <div className="flex-grow border-t border-slate-200" />
+                  </div>
 
-                          <form onSubmit={googleIsRegister ? handleGoogleSignup : handleGoogleLogin} className="space-y-3.5">
-                            <div className="space-y-1.5">
-                              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">E-mail do Google (@gmail.com)</label>
-                              <div className="relative">
-                                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                <input
-                                  type="email"
-                                  required
-                                  value={googleEmail}
-                                  onChange={e => setGoogleEmail(e.target.value)}
-                                  className="w-full pl-10 pr-4 py-3 bg-slate-50/80 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 text-xs font-semibold text-slate-800"
-                                  placeholder="nome.usuario@gmail.com"
-                                />
-                              </div>
-                            </div>
-
-                            {googleIsRegister && (
-                              <div className="space-y-1.5 animate-fadeIn">
-                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Nome do Organizador</label>
-                                <div className="relative">
-                                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                  <input
-                                    type="text"
-                                    required
-                                    value={googleName}
-                                    onChange={e => setGoogleName(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-50/80 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 text-xs font-semibold text-slate-800"
-                                    placeholder="Ex: João da Silva"
-                                  />
-                                </div>
-                              </div>
-                            )}
-
-                            <button
-                              type="submit"
-                              disabled={loading}
-                              className="w-full cursor-pointer bg-red-600 hover:bg-red-700 text-white font-black text-xs py-3.5 rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 hover:scale-[1.01] disabled:opacity-50"
-                            >
-                              {loading ? "Processando..." : googleIsRegister ? "Cadastrar com Gmail" : "Validar e Acessar com Google"}
-                            </button>
-
-                            <div className="text-center pt-1 border-t border-slate-100 mt-2">
-                              {googleIsRegister ? (
-                                <p className="text-[11px] text-slate-500 font-bold">
-                                  Já possui cadastro de organizador?{" "}
-                                  <button
-                                    type="button"
-                                    onClick={() => { setGoogleIsRegister(false); setError(""); setSuccessMsg(""); }}
-                                    className="text-red-650 font-black hover:underline cursor-pointer"
-                                  >
-                                    Entrar com Gmail
-                                  </button>
-                                </p>
-                              ) : (
-                                <p className="text-[11px] text-slate-500 font-bold">
-                                  Não encontrou sua conta @gmail.com?{" "}
-                                  <button
-                                    type="button"
-                                    onClick={() => { setGoogleIsRegister(true); setError(""); setSuccessMsg(""); }}
-                                    className="text-red-650 font-black hover:underline cursor-pointer"
-                                  >
-                                    Cadastrar Nova Conta Gmail
-                                  </button>
-                                </p>
-                              )}
-                            </div>
-                          </form>
-                        </div>
-                      ) : (
-                        /* REAL POPUP FIREBASE AUTH IMPLEMENTATION */
-                        <div className="space-y-4">
-                          <div className="p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-2xl text-[11px] font-semibold text-slate-600 space-y-2 leading-relaxed">
-                            <div className="flex items-center gap-1.5 text-indigo-850 font-black">
-                              <Sparkles className="w-4 h-4 text-indigo-600 animate-pulse" />
-                              <span>Autenticação Federada Oficial</span>
-                            </div>
-                            <p>
-                              Acesse sua conta ou crie um novo cadastro instantaneamente utilizando o provedor oficial do Google através do Firebase. 
-                            </p>
-                            <p className="text-[10px] text-indigo-600 font-extrabold flex items-start gap-1">
-                              ⚠️ Nota: Se a janela popup não abrir, certifique-se de permitir popups nas configurações do navegador ou abra o aplicativo em uma **Nova Guia** para contornar as restrições de iframe.
-                            </p>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={handleFirebaseGoogleLogin}
-                            disabled={loading}
-                            className="w-full cursor-pointer bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-black text-xs py-3.5 rounded-2xl transition-all shadow-sm flex items-center justify-center gap-2.5 hover:scale-[1.01] disabled:opacity-50"
-                          >
-                            <svg className="w-4.5 h-4.5" viewBox="0 0 24 24">
-                              <path
-                                fill="#FFFFFF"
-                                d="M21.35,11.1H12V12.9H19.6C18.9,14.9 17.1,16.2 15,16.2C12.2,16.2 10,14 10,11.2C10,8.4 12.2,6.2 15,6.2C16.2,6.2 17.3,6.6 18.2,7.4L19.5,6.1C18.3,5 16.7,4.3 15,4.3C10.7,4.3 7.2,7.8 7.2,12.1C7.2,16.4 10.7,19.9 15,19.9C19.1,19.9 22,17 22,12.9C22,12.3 21.9,11.7 21.35,11.1Z"
-                              />
-                            </svg>
-                            <span>{loading ? "Autenticando..." : "Entrar com Conta Google"}</span>
-                          </button>
-
-                          <p className="text-center text-[10px] text-slate-400 font-bold italic pt-1">
-                            Apenas e-mails terminados em @gmail.com são aceitos pelo sistema de segurança.
-                          </p>
-                        </div>
-                      )}
+                  {/* Standard Email / Password Form */}
+                  <form onSubmit={handleSubmitOrganizer} className="space-y-3.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        {isRegister ? "Cadastro por E-mail" : "Acesso por E-mail"}
+                      </span>
                     </div>
-                  ) : (
-                    /* STANDARD EMAIL / PASSWORD FORM */
-                    <form onSubmit={handleSubmitOrganizer} className="space-y-4">
-                      <p className="text-slate-500 text-xs font-semibold leading-relaxed mb-1">
-                        Acesse como Organizador para criar, estender e salvar roteiros de viagem e gerenciar viajantes.
-                      </p>
 
-                      {isRegister && (
-                        <div className="space-y-1.5">
-                          <label className="block text-xs font-extrabold text-slate-600 uppercase tracking-widest">Nome Completo</label>
-                          <div className="relative">
-                            <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                            <input
-                              type="text"
-                              required
-                              value={name}
-                              onChange={e => setName(e.target.value)}
-                              className="w-full pl-10 pr-4 py-3 bg-slate-50/50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 text-xs font-semibold"
-                              placeholder="Seu nome"
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="space-y-1.5">
-                        <label className="block text-xs font-extrabold text-slate-600 uppercase tracking-widest">E-mail</label>
+                    {isRegister && (
+                      <div className="space-y-1 animate-fadeIn">
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Nome Completo</label>
                         <div className="relative">
-                          <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                           <input
-                            type="email"
+                            type="text"
                             required
-                            value={email}
-                            onChange={e => setEmail(e.target.value)}
+                            value={name}
+                            onChange={e => setName(e.target.value)}
                             className="w-full pl-10 pr-4 py-3 bg-slate-50/50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 text-xs font-semibold"
-                            placeholder="organizador@email.com"
+                            placeholder="Seu nome"
                           />
                         </div>
                       </div>
+                    )}
 
-                      <div className="space-y-1.5">
-                        <label className="block text-xs font-extrabold text-slate-600 uppercase tracking-widest">Senha</label>
-                        <div className="relative">
-                          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                          <input
-                            type="password"
-                            required
-                            value={password}
-                            onChange={e => setPassword(e.target.value)}
-                            className="w-full pl-10 pr-4 py-3 bg-slate-50/50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 text-xs font-semibold"
-                            placeholder="••••••••"
-                          />
-                        </div>
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Endereço de E-mail</label>
+                      <div className="relative">
+                        <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                          type="email"
+                          required
+                          value={email}
+                          onChange={e => setEmail(e.target.value)}
+                          className="w-full pl-10 pr-4 py-3 bg-slate-50/50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 text-xs font-semibold"
+                          placeholder="organizador@email.com"
+                        />
                       </div>
+                    </div>
 
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Senha</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                          type="password"
+                          required
+                          value={password}
+                          onChange={e => setPassword(e.target.value)}
+                          className="w-full pl-10 pr-4 py-3 bg-slate-50/50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 text-xs font-semibold"
+                          placeholder="••••••••"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs py-3.5 rounded-2xl transition-all shadow-sm flex items-center justify-center gap-2 disabled:bg-indigo-400 hover:scale-[1.01]"
+                    >
+                      {loading ? "Processando..." : (isRegister ? <><UserPlus className="w-4.5 h-4.5" /> Cadastrar com E-mail</> : <><LogIn className="w-4.5 h-4.5" /> Entrar com E-mail</>)}
+                    </button>
+
+                    <p className="text-center text-xs text-slate-500 font-bold shrink-0 pt-1">
+                      {isRegister ? "Já possui conta?" : "Não tem conta de organizador?"}{" "}
                       <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full cursor-pointer bg-indigo-600 hover:bg-indigo-750 text-white font-black text-xs py-3.5 rounded-2xl transition-all shadow-sm flex items-center justify-center gap-2 disabled:bg-indigo-400 hover:scale-[1.01]"
+                        type="button"
+                        onClick={() => { setIsRegister(!isRegister); setError(""); setSuccessMsg(""); }}
+                        className="text-indigo-600 font-black hover:underline cursor-pointer"
                       >
-                        {loading ? "Aguarde..." : (isRegister ? <><UserPlus className="w-4.5 h-4.5" /> Cadastrar Organizador</> : <><LogIn className="w-4.5 h-4.5" /> Entrar como Organizador</>)}
+                        {isRegister ? "Fazer Login" : "Criar uma Conta"}
                       </button>
-
-                      {/* Google Sign-on Trigger Button (Temporarily Hidden) */}
-
-                      <p className="text-center text-xs text-slate-500 font-bold shrink-0 pt-1">
-                        {isRegister ? "Já possui conta?" : "Não tem conta de organizador?"}{" "}
-                        <button
-                          type="button"
-                          onClick={() => { setIsRegister(!isRegister); setError(""); }}
-                          className="text-indigo-600 font-black hover:underline cursor-pointer"
-                        >
-                          {isRegister ? "Fazer Login" : "Criar uma Conta"}
-                        </button>
-                      </p>
-                    </form>
-                  )}
-                </>
+                    </p>
+                  </form>
+                </div>
               ) : (
                 /* TRAVELER GUEST READONLY DECOUPLED FLOW (Untouched behavior) */
                 <form onSubmit={handleSubmitTraveler} className="space-y-4 animate-fadeIn">
@@ -819,21 +768,21 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
         </div>
       </div>
 
-      {/* DETACHED SIMULATED GOOGLE GMAIL INBOX FOR DEVELOPMENT & INTERACTIVE TESTING */}
-      {((useGoogle && googleEmail.toLowerCase().endsWith("@gmail.com")) || (setupPasswordMode && setupEmail.toLowerCase().endsWith("@gmail.com"))) && (
+      {/* DETACHED SIMULATED GMAIL / SMTP MAILBOX FOR DEVELOPMENT & INTERACTIVE TESTING */}
+      {(simulatedEmails.length > 0 || (email && email.includes("@")) || (useGoogle && googleEmail.toLowerCase().endsWith("@gmail.com")) || (setupPasswordMode && setupEmail.toLowerCase().endsWith("@gmail.com"))) && (
         <div id="gmail-simulated-mailbox" className="max-w-md w-full mt-6 bg-slate-900 text-slate-100 rounded-3xl p-6 shadow-2xl border border-slate-800 animate-slideUp">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
             <div className="flex items-center gap-2">
-              <span className="p-1.5 bg-red-500/10 text-red-500 rounded-xl">
+              <span className="p-1.5 bg-indigo-500/10 text-indigo-400 rounded-xl">
                 <Inbox className="w-4 h-4" />
               </span>
               <div>
-                <h4 className="text-xs font-black tracking-tight text-white">Gmail Sandbox Simulado</h4>
-                <p className="text-[10px] text-slate-400 font-medium">{useGoogle ? googleEmail : setupEmail}</p>
+                <h4 className="text-xs font-black tracking-tight text-white">Caixa de Entrada Simulada (Dev)</h4>
+                <p className="text-[10px] text-slate-400 font-medium">{email || googleEmail || setupEmail || "Sandbox de E-mails"}</p>
               </div>
             </div>
             <button
-              onClick={() => fetchSimulatedEmails(useGoogle ? googleEmail : setupEmail)}
+              onClick={() => fetchSimulatedEmails(email || googleEmail || setupEmail)}
               className="p-2 hover:bg-slate-800 rounded-xl transition text-slate-400 hover:text-white cursor-pointer"
               title="Sincronizar caixa de entrada"
             >
@@ -858,14 +807,14 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
                   key={mail.id} 
                   className={`p-3.5 rounded-2xl text-left border transition-all ${
                     selectedSimulatedEmail?.id === mail.id 
-                      ? "bg-slate-800/80 border-indigo-650" 
+                      ? "bg-slate-800/80 border-indigo-500" 
                       : "bg-slate-800/60 hover:bg-slate-800 border-slate-800 cursor-pointer"
                   }`}
                   onClick={() => setSelectedSimulatedEmail(selectedSimulatedEmail?.id === mail.id ? null : mail)}
                 >
                   <div className="flex justify-between items-start">
                     <div>
-                      <span className="text-[10px] bg-red-500/20 text-red-400 font-black px-2 py-0.5 rounded-md mb-1.5 inline-block uppercase">Gmail</span>
+                      <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-black px-2 py-0.5 rounded-md mb-1.5 inline-block uppercase">KK TUR E-mail</span>
                       <h5 className="text-xs font-black text-white">{mail.subject}</h5>
                       <p className="text-[10px] text-slate-400 mt-1 line-clamp-1 font-semibold">De: seguranca@kktur.com.br</p>
                     </div>
@@ -884,13 +833,17 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
                           e.stopPropagation();
                           const tokenMatch = mail.link.match(/token=([^&]+)/);
                           if (tokenMatch && tokenMatch[1]) {
-                            handleActivateToken(tokenMatch[1]);
+                            if (mail.link.includes("action=verify_email")) {
+                              handleVerifyEmailToken(tokenMatch[1]);
+                            } else {
+                              handleActivateToken(tokenMatch[1]);
+                            }
                           }
                         }}
-                        className="w-full py-2.5 bg-indigo-650 hover:bg-indigo-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer shadow-md select-none"
+                        className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer shadow-md select-none"
                       >
                         <Key className="w-3.5 h-3.5" />
-                        <span>Definir Minha Senha com Segurança</span>
+                        <span>Confirmar E-mail / Ativar Conta</span>
                       </button>
                     </div>
                   )}

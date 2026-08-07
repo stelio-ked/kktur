@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { users } from "../db/schema.js";
 import { authMiddleware, AuthRequest, JWT_SECRET, formatDbError } from "../middleware/auth.js";
-import { sendEmail, buildPasswordSetupEmail } from "../services/email.js";
+import { sendEmail, buildPasswordSetupEmail, buildAccountVerificationEmail } from "../services/email.js";
 
 const router = Router();
 
@@ -31,12 +31,83 @@ router.post("/register", async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    const [newUser] = await db.insert(users).values({ email, passwordHash, name }).returning();
+    const verificationToken = crypto.randomBytes(32).toString("hex");
+    const expires = new Date(Date.now() + 24 * 3600 * 1000); // 24h
+
+    const [newUser] = await db.insert(users).values({
+      email,
+      passwordHash,
+      name,
+      isVerified: false,
+      provider: "email",
+      passwordResetToken: verificationToken,
+      passwordResetExpires: expires,
+    }).returning();
     
-    const token = jwt.sign({ id: newUser.id, email: newUser.email, name: newUser.name }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ success: true, token, user: { id: newUser.id, email: newUser.email, name: newUser.name } });
+    const appUrl = process.env.APP_URL || "http://localhost:3000";
+    const verifyUrl = `${appUrl}?action=verify_email&token=${verificationToken}&email=${encodeURIComponent(email)}`;
+
+    const emailPayload = buildAccountVerificationEmail({ name, email, verifyUrl });
+    const { sent } = await sendEmail(emailPayload);
+
+    if (!sent) {
+      simulatedEmails.push({
+        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(),
+        to: email,
+        subject: emailPayload.subject,
+        body: emailPayload.text || emailPayload.html,
+        link: verifyUrl,
+        date: new Date()
+      });
+    }
+
+    res.json({
+      success: true,
+      requiresVerification: true,
+      message: "Conta criada com sucesso! Enviamos um e-mail de confirmação para ativar o seu acesso.",
+      email
+    });
   } catch (err: any) {
     res.status(500).json({ error: formatDbError(err) });
+  }
+});
+
+router.post("/verify-email", async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: "Token de verificação ausente." });
+    }
+
+    const [user] = await db.select().from(users).where(eq(users.passwordResetToken, token)).limit(1);
+    if (!user) {
+      return res.status(400).json({ error: "Link de ativação inválido ou já utilizado." });
+    }
+
+    if (user.passwordResetExpires && new Date() > new Date(user.passwordResetExpires)) {
+      return res.status(400).json({ error: "Link de ativação expirado. Por favor, solicite um novo cadastro ou suporte." });
+    }
+
+    await db.update(users).set({
+      isVerified: true,
+      passwordResetToken: null,
+      passwordResetExpires: null
+    }).where(eq(users.id, user.id));
+
+    const appToken = jwt.sign(
+      { id: user.id, email: user.email, name: user.name },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      success: true,
+      message: "Conta ativada com sucesso! Seja bem-vindo ao KK TUR.",
+      token: appToken,
+      user: { id: user.id, email: user.email, name: user.name }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Erro ao ativar conta: " + err.message });
   }
 });
 
@@ -50,6 +121,12 @@ router.post("/login", async (req, res) => {
 
     const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) return res.status(400).json({ error: "Credenciais inválidas" });
+
+    if (user.isVerified === false) {
+      return res.status(400).json({
+        error: "Sua conta ainda não foi ativada por e-mail. Por favor, acesse o link enviado à sua caixa postal para ativar seu acesso."
+      });
+    }
 
     const token = jwt.sign({ id: user.id, email: user.email, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ success: true, token, user: { id: user.id, email: user.email, name: user.name } });
@@ -262,14 +339,9 @@ router.post("/gmail-set-password", async (req, res) => {
 
 router.post("/firebase-google-login", async (req, res) => {
   try {
-    const { email, name } = req.body;
+    const { email, name, provider } = req.body;
     if (!email) {
       return res.status(400).json({ error: "E-mail do Firebase é obrigatório." });
-    }
-
-    const isGmailOfGoogle = email.toLowerCase().endsWith("@gmail.com");
-    if (!isGmailOfGoogle) {
-      return res.status(400).json({ error: "Apenas e-mails terminados em @gmail.com são permitidos via login do Google." });
     }
 
     let [existingUser] = await db.select().from(users).where(eq(users.email, email)).limit(1);
@@ -278,9 +350,13 @@ router.post("/firebase-google-login", async (req, res) => {
       const [newUser] = await db.insert(users).values({
         email,
         name: name || email.split("@")[0],
-        passwordHash: null
+        passwordHash: null,
+        isVerified: true,
+        provider: provider || "google"
       }).returning();
       existingUser = newUser;
+    } else if (existingUser.isVerified === false) {
+      await db.update(users).set({ isVerified: true }).where(eq(users.id, existingUser.id));
     }
 
     const appToken = jwt.sign(
@@ -295,8 +371,47 @@ router.post("/firebase-google-login", async (req, res) => {
       user: { id: existingUser.id, email: existingUser.email, name: existingUser.name }
     });
   } catch (err: any) {
-    console.error("Firebase Google Auth login error:", err);
+    console.error("Firebase Social Auth login error:", err);
     res.status(500).json({ error: "Erro ao autenticar usuário com Firebase: " + err.message });
+  }
+});
+
+router.post("/firebase-social-login", async (req, res) => {
+  try {
+    const { email, name, provider } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: "E-mail é obrigatório." });
+    }
+
+    let [existingUser] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+
+    if (!existingUser) {
+      const [newUser] = await db.insert(users).values({
+        email,
+        name: name || email.split("@")[0],
+        passwordHash: null,
+        isVerified: true,
+        provider: provider || "social"
+      }).returning();
+      existingUser = newUser;
+    } else if (existingUser.isVerified === false) {
+      await db.update(users).set({ isVerified: true }).where(eq(users.id, existingUser.id));
+    }
+
+    const appToken = jwt.sign(
+      { id: existingUser.id, email: existingUser.email, name: existingUser.name },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      success: true,
+      token: appToken,
+      user: { id: existingUser.id, email: existingUser.email, name: existingUser.name }
+    });
+  } catch (err: any) {
+    console.error("Firebase Social Auth login error:", err);
+    res.status(500).json({ error: "Erro ao autenticar usuário social: " + err.message });
   }
 });
 

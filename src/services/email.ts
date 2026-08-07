@@ -162,3 +162,85 @@ export function buildPasswordSetupEmail(opts: {
 
   return { to: email, subject: title, html, text };
 }
+
+export function buildAccountVerificationEmail(opts: {
+  name: string;
+  email: string;
+  verifyUrl: string;
+}): EmailPayload {
+  const { name, email, verifyUrl } = opts;
+  const title = "Confirme seu e-mail de cadastro — KK TUR";
+  const html = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${title}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:32px 40px;text-align:center;">
+              <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;letter-spacing:-0.5px;">
+                ✈️ KK TUR
+              </h1>
+              <p style="margin:6px 0 0;color:#a0aec0;font-size:13px;">Roteiro & Custos de Viagem</p>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:40px;">
+              <p style="margin:0 0 16px;font-size:16px;color:#2d3748;">Olá, <strong>${name || "Organizador"}</strong>!</p>
+              <p style="margin:0 0 28px;font-size:15px;color:#4a5568;line-height:1.6;">
+                Obrigado por se cadastrar no KK TUR! Para concluir a criação da sua conta e liberar seu acesso, confirme seu e-mail clicando no botão abaixo:
+              </p>
+              <!-- CTA Button -->
+              <table cellpadding="0" cellspacing="0" style="margin:0 auto 32px;">
+                <tr>
+                  <td style="background:linear-gradient(135deg,#4f46e5 0%,#4338ca 100%);border-radius:8px;">
+                    <a href="${verifyUrl}" target="_blank"
+                       style="display:inline-block;padding:14px 32px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;border-radius:8px;">
+                      ✅ Ativar Minha Conta
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <!-- Warning -->
+              <table cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td style="background:#fffbeb;border:1px solid #f6d860;border-radius:8px;padding:14px 16px;">
+                    <p style="margin:0;font-size:13px;color:#92400e;">
+                      ⚠️ Este link de confirmação expira em <strong>24 horas</strong>. Se você não solicitou este cadastro, ignore-o.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f7f8fa;padding:20px 40px;border-top:1px solid #e2e8f0;text-align:center;">
+              <p style="margin:0;font-size:12px;color:#a0aec0;">
+                KK TUR — Seu diário de bordo de viagens.<br />
+                Este é um e-mail automático, não responda a esta mensagem.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  const text = `Olá, ${name || "Organizador"}!\n\nConfirme seu e-mail clicando no link abaixo:\n${verifyUrl}\n\nEste link expira em 24 horas.\n\nKK TUR`;
+
+  return { to: email, subject: title, html, text };
+}
+
