@@ -20,7 +20,7 @@ export const createPool = () => {
   });
 };
 
-const pool = createPool();
+export const pool = createPool();
 
 if (pool) {
   pool.on("error", (err) => {
@@ -31,3 +31,4 @@ if (pool) {
 // Export db instance
 // You can use `db` in your API routes if initialized.
 export const db = pool ? drizzle(pool, { schema }) : null;
+

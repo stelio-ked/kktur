@@ -4,10 +4,8 @@ dns.setDefaultResultOrder("ipv4first");
 import express from "express";
 import path from "path";
 
-import { db } from "./src/db/index.js";
+import { db, pool } from "./src/db/index.js";
 import { users } from "./src/db/schema.js";
-// Nota: restoreItinerary45IfNeeded foi movida para scripts/seed-itinerary45.ts
-// Execute manualmente com: npx tsx scripts/seed-itinerary45.ts
 
 import authRouter from "./src/routes/auth.js";
 import devRouter from "./src/routes/dev.js";
@@ -17,11 +15,13 @@ import aiRouter from "./src/routes/ai.js";
 import adminRouter from "./src/routes/admin.js";
 
 async function startServer() {
-  if (db) {
+  if (pool) {
     try {
-      // P12: Migrações de schema devem ser executadas via `npx drizzle-kit migrate`
-      // antes do deploy, não durante o boot. O ALTER TABLE abaixo foi removido.
-      console.log("Database connection ready.");
+      await pool.query(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT TRUE;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS provider TEXT DEFAULT 'email';
+      `);
+      console.log("Database connection ready & columns verified.");
     } catch (err) {
       console.error("Error during startup DB check:", err);
     }
