@@ -234,7 +234,10 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
     } catch (err: any) {
       console.error("Firebase Auth Error:", err);
       if (err.code === "auth/popup-closed-by-user") {
-        setError("O login foi cancelado. A janela de autenticação do Google foi fechada.");
+        setError("O login foi cancelado. A janela de autenticação foi fechada.");
+      } else if (err.code === "auth/unauthorized-domain") {
+        const domain = window.location.hostname;
+        setError(`O domínio "${domain}" não está autorizado no Firebase. Para habilitar o login social, adicione "${domain}" em: Firebase Console > Authentication > Settings > Authorized domains.`);
       } else {
         setError(err.message || "Falha na autenticação via Firebase Google Auth.");
       }
@@ -276,6 +279,9 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
       console.error("Firebase Apple Auth Error:", err);
       if (err.code === "auth/popup-closed-by-user") {
         setError("O login foi cancelado. A janela de autenticação da Apple foi fechada.");
+      } else if (err.code === "auth/unauthorized-domain") {
+        const domain = window.location.hostname;
+        setError(`O domínio "${domain}" não está autorizado no Firebase. Para habilitar o login social, adicione "${domain}" em: Firebase Console > Authentication > Settings > Authorized domains.`);
       } else {
         setError(err.message || "Falha na autenticação via Apple.");
       }
