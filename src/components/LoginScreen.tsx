@@ -773,7 +773,7 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
       </div>
 
       {/* DETACHED SIMULATED GMAIL / SMTP MAILBOX FOR DEVELOPMENT & INTERACTIVE TESTING */}
-      {(simulatedEmails.length > 0 || (email && email.includes("@")) || (useGoogle && googleEmail.toLowerCase().endsWith("@gmail.com")) || (setupPasswordMode && setupEmail.toLowerCase().endsWith("@gmail.com"))) && (
+      {simulatedEmails.length > 0 && (
         <div id="gmail-simulated-mailbox" className="max-w-md w-full mt-6 bg-slate-900 text-slate-100 rounded-3xl p-6 shadow-2xl border border-slate-800 animate-slideUp">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
             <div className="flex items-center gap-2">
