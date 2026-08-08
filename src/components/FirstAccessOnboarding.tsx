@@ -11,7 +11,8 @@ import {
   HelpCircle,
   Wand2,
   Globe,
-  Plane
+  Plane,
+  Zap
 } from "lucide-react";
 
 interface FirstAccessOnboardingProps {
@@ -42,7 +43,7 @@ export default function FirstAccessOnboarding({
   currentUser
 }: FirstAccessOnboardingProps) {
   const [activeMode, setActiveMode] = useState<"ai" | "manual">("ai");
-  
+
   // AI Flow State
   const [prompt, setPrompt] = useState("");
   const [step, setStep] = useState<"input" | "questions" | "generating">("input");
@@ -50,10 +51,23 @@ export default function FirstAccessOnboarding({
   const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [customInputs, setCustomInputs] = useState<Record<string, string>>({});
-  
+
   // Manual Flow State
   const [manualTitle, setManualTitle] = useState("");
-  
+
+  // AI quota state
+  const [aiRemaining, setAiRemaining] = useState<number | null>(null);
+  const AI_LIMIT = 20;
+
+  // Dynamic templates from DB (fallback to static)
+  const staticTemplates = [
+    { label: "7 dias em Paris & Roma", text: "7 dias em Paris e Roma com atrações culturais, gastronomia e orçamento moderado." },
+    { label: "10 dias no Japão", text: "10 dias no Japão visitando Tóquio e Quioto com ritmo equilibrado." },
+    { label: "Férias em Gramado", text: "Final de semana romântico em Gramado e Canela com passeios e restaurantes." },
+    { label: "5 dias em Nova York", text: "5 dias em Nova York conhecendo atrações principais, Broadway e parques." }
+  ];
+  const [quickTemplates, setQuickTemplates] = useState(staticTemplates);
+
   // Loading Messages
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
   const loadingMessages = [
@@ -74,12 +88,21 @@ export default function FirstAccessOnboarding({
     return () => clearInterval(interval);
   }, [step]);
 
-  const quickTemplates = [
-    { label: "7 dias em Paris & Roma", text: "7 dias em Paris e Roma com atrações culturais, gastronomia e orçamento moderado." },
-    { label: "10 dias no Japão", text: "10 dias no Japão visitando Tóquio e Quioto com ritmo equilibrado." },
-    { label: "Férias em Gramado", text: "Final de semana romântico em Gramado e Canela com passeios e restaurantes." },
-    { label: "5 dias em Nova York", text: "5 dias em Nova York conhecendo atrações principais, Broadway e parques." }
-  ];
+
+  // Fetch dynamic templates from DB on mount (fallback to static if empty)
+  useEffect(() => {
+    if (!token) return;
+    fetch("/api/gemini/prompt-templates", {
+      headers: { "Authorization": `Bearer ${token}` }
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.templates && data.templates.length >= 2) {
+          setQuickTemplates(data.templates);
+        }
+      })
+      .catch(() => {/* silently use static fallback */});
+  }, [token]);
 
   const handleEvaluatePrompt = async (promptText: string) => {
     const textToUse = promptText || prompt;
@@ -136,6 +159,12 @@ export default function FirstAccessOnboarding({
           answers: finalAnswers
         })
       });
+
+      // Capture AI usage quota from response headers
+      const remaining = response.headers.get("X-AI-Remaining");
+      if (remaining !== null) {
+        setAiRemaining(parseInt(remaining, 10));
+      }
 
       if (!response.ok) {
         const errData = await response.json();
@@ -348,7 +377,9 @@ export default function FirstAccessOnboarding({
 
               {/* Quick Template Chips */}
               <div className="space-y-2">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Ou selecione uma sugestão rápida:</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block flex items-center gap-1.5">
+                  Ou selecione uma sugestão rápida:
+                </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {quickTemplates.map((item) => (
                     <button
@@ -360,18 +391,36 @@ export default function FirstAccessOnboarding({
                       }}
                       className="p-3 bg-slate-50 hover:bg-indigo-50/60 border border-slate-200 hover:border-indigo-200 rounded-xl text-left transition-all cursor-pointer group flex items-center justify-between"
                     >
-                      <span className="text-xs font-black text-slate-700 group-hover:text-indigo-700">{item.label}</span>
-                      <Sparkles className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 transition" />
+                      <span className="text-xs font-black text-slate-700 group-hover:text-indigo-700 line-clamp-1">{item.label}</span>
+                      <Sparkles className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 transition shrink-0" />
                     </button>
                   ))}
                 </div>
               </div>
 
+              {/* AI Usage Badge */}
+              {aiRemaining !== null && (
+                <div className={`flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11px] font-black border ${
+                  aiRemaining > 5
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : aiRemaining > 0
+                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                    : "bg-rose-50 text-rose-700 border-rose-200"
+                }`}>
+                  <Zap className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {aiRemaining > 0
+                      ? `${aiRemaining} de ${AI_LIMIT} usos de IA disponíveis hoje`
+                      : "Limite diário de IA atingido. Tente novamente amanhã."}
+                  </span>
+                </div>
+              )}
+
               {/* Submit AI Button */}
               <button
                 type="button"
                 onClick={() => handleEvaluatePrompt(prompt)}
-                disabled={!prompt.trim()}
+                disabled={!prompt.trim() || aiRemaining === 0}
                 className="w-full py-4 bg-gradient-to-r from-indigo-600 via-indigo-700 to-slate-900 text-white font-black text-xs sm:text-sm rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2.5 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 cursor-pointer"
               >
                 <Sparkles className="w-4 h-4 text-amber-300 animate-bounce" />

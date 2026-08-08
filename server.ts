@@ -20,6 +20,16 @@ async function startServer() {
       await pool.query(`
         ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT TRUE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS provider TEXT DEFAULT 'email';
+        CREATE TABLE IF NOT EXISTS ai_prompt_logs (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER REFERENCES users(id),
+          original_prompt TEXT NOT NULL,
+          questions TEXT,
+          answers TEXT,
+          generated_title TEXT,
+          success BOOLEAN NOT NULL DEFAULT FALSE,
+          created_at TIMESTAMP DEFAULT NOW()
+        );
       `);
       console.log("Database connection ready & columns verified.");
     } catch (err) {

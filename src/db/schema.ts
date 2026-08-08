@@ -331,3 +331,20 @@ export const apiUsageLogs = pgTable("api_usage_logs", {
   callCount: integer("call_count").default(0).notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// AI Prompt history — stores every successful AI generation session for template reuse
+export const aiPromptLogs = pgTable("ai_prompt_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  originalPrompt: text("original_prompt").notNull(),
+  questions: text("questions"),       // JSON: SuggestedQuestion[]
+  answers: text("answers"),           // JSON: Record<string, string>
+  generatedTitle: text("generated_title"),
+  success: boolean("success").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const aiPromptLogsRelations = relations(aiPromptLogs, ({ one }) => ({
+  user: one(users, { fields: [aiPromptLogs.userId], references: [users.id] }),
+}));
+

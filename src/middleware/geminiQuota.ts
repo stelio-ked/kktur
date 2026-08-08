@@ -4,7 +4,7 @@ import { db } from "../db/index.js";
 import { apiUsageLogs } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
 
-const MAX_GEMINI_CALLS_PER_DAY = 15;
+const MAX_GEMINI_CALLS_PER_DAY = 20;
 
 export const geminiQuotaMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
   if (!req.user || req.user.id === 0) return next();
@@ -21,9 +21,11 @@ export const geminiQuotaMiddleware = async (req: AuthRequest, res: Response, nex
       )
     });
 
-    if (existing && existing.callCount >= MAX_GEMINI_CALLS_PER_DAY) {
+    const currentCount = existing?.callCount ?? 0;
+
+    if (currentCount >= MAX_GEMINI_CALLS_PER_DAY) {
       return res.status(429).json({ 
-        error: `Limite diário de uso da IA atingido. Para evitar custos excessivos, o limite é de ${MAX_GEMINI_CALLS_PER_DAY} requisições por dia. Tente novamente amanhã.` 
+        error: `Limite diário de uso da IA atingido (${MAX_GEMINI_CALLS_PER_DAY} usos/dia). Tente novamente amanhã.`
       });
     }
 
@@ -40,8 +42,14 @@ export const geminiQuotaMiddleware = async (req: AuthRequest, res: Response, nex
         callCount: 1,
       });
     }
+
+    // Inform client about remaining quota
+    const remaining = MAX_GEMINI_CALLS_PER_DAY - (currentCount + 1);
+    res.setHeader("X-AI-Remaining", Math.max(0, remaining));
+    res.setHeader("X-AI-Limit", MAX_GEMINI_CALLS_PER_DAY);
   } catch (error) {
     console.warn("Failed to update API usage logs:", error);
   }
   next();
 };
+

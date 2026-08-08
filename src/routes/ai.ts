@@ -3,7 +3,8 @@ import crypto from "crypto";
 import { eq } from "drizzle-orm";
 import { Type } from "@google/genai";
 import { db } from "../db/index.js";
-import { nearbyPlaces } from "../db/schema.js";
+import { nearbyPlaces, aiPromptLogs } from "../db/schema.js";
+import { sql } from "drizzle-orm";
 import { authMiddleware, AuthRequest } from "../middleware/auth.js";
 import { geminiQuotaMiddleware } from "../middleware/geminiQuota.js";
 import { generateContentWithRetry } from "../services/ai.js";
@@ -279,10 +280,58 @@ Crie dados ricos, realistas e inspiradores. Siga este formato JSON rígido e gar
 
     const text = response.text || "{}";
     const result = JSON.parse(text.trim());
+
+    // Persist this generation session for template reuse
+    try {
+      const userId = (req as AuthRequest).user?.id ?? null;
+      const city = result?.destinations?.[0]?.city || "";
+      const country = result?.destinations?.[0]?.country || "";
+      const dates = result?.destinations?.[0]?.dates || "";
+      const generatedTitle = `${city}${country ? `, ${country}` : ""} ${dates ? `(${dates})` : ""}`.trim();
+
+      await db.insert(aiPromptLogs).values({
+        userId,
+        originalPrompt: prompt,
+        questions: answers && Object.keys(answers).length > 0 ? JSON.stringify(answers) : null,
+        answers: answers && Object.keys(answers).length > 0 ? JSON.stringify(answers) : null,
+        generatedTitle: generatedTitle || null,
+        success: true,
+      });
+    } catch (logErr) {
+      console.warn("Failed to save AI prompt log:", logErr);
+    }
+
     res.json(result);
   } catch (err: any) {
     console.error("Generation error:", err);
     res.status(500).json({ error: "Erro ao gerar roteiro estruturado com IA: " + err.message });
+  }
+});
+
+// Returns up to 4 random successful AI generation prompts to power the "quick templates" UI
+router.get("/prompt-templates", authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const rows = await db
+      .select({
+        id: aiPromptLogs.id,
+        originalPrompt: aiPromptLogs.originalPrompt,
+        generatedTitle: aiPromptLogs.generatedTitle,
+      })
+      .from(aiPromptLogs)
+      .where(eq(aiPromptLogs.success, true))
+      .orderBy(sql`RANDOM()`)
+      .limit(4);
+
+    // Build label from generatedTitle or truncate prompt
+    const templates = rows.map((row) => ({
+      label: row.generatedTitle || row.originalPrompt.slice(0, 40),
+      text: row.originalPrompt,
+    }));
+
+    res.json({ templates });
+  } catch (err: any) {
+    console.error("prompt-templates error:", err);
+    res.json({ templates: [] });
   }
 });
 
