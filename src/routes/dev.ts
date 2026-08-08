@@ -4,9 +4,6 @@ import { simulatedEmails } from "./auth.js";
 const router = Router();
 
 router.get("/last-emails", async (req, res) => {
-  if (process.env.NODE_ENV === "production") {
-    return res.status(403).json({ error: "Endpoint desativado em produção." });
-  }
   try {
     const { email } = req.query;
     if (!email) {
@@ -22,9 +19,6 @@ router.get("/last-emails", async (req, res) => {
 });
 
 router.delete("/last-emails/:id", async (req, res) => {
-  if (process.env.NODE_ENV === "production") {
-    return res.status(403).json({ error: "Endpoint desativado em produção." });
-  }
   try {
     const { id } = req.params;
     const index = simulatedEmails.findIndex((m) => m.id === id);

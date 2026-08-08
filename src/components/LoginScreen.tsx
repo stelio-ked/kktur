@@ -70,6 +70,9 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
       if (res.ok) {
         const data = await res.json();
         setSimulatedEmails(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setSelectedSimulatedEmail(data[data.length - 1]);
+        }
       }
     } catch (err) {
       console.error("Error fetching simulated emails:", err);

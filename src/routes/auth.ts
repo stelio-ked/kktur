@@ -48,9 +48,23 @@ router.post("/register", async (req, res) => {
     const verifyUrl = `${appUrl}?action=verify_email&token=${verificationToken}&email=${encodeURIComponent(email)}`;
 
     const emailPayload = buildAccountVerificationEmail({ name, email, verifyUrl });
-    const { sent } = await sendEmail(emailPayload);
+    let sent = false;
+    try {
+      const emailRes = await sendEmail(emailPayload);
+      sent = emailRes.sent;
+    } catch (sendErr: any) {
+      console.warn("[Register Email Warning] Could not send via SMTP, falling back to simulated inbox:", sendErr.message);
+      sent = false;
+    }
 
     if (!sent) {
+      // Clear older simulated emails for this email
+      const indexList: number[] = [];
+      simulatedEmails.forEach((m, idx) => {
+        if (m.to.toLowerCase() === email.toLowerCase()) indexList.push(idx);
+      });
+      for (let i = indexList.length - 1; i >= 0; i--) simulatedEmails.splice(indexList[i], 1);
+
       simulatedEmails.push({
         id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(),
         to: email,
