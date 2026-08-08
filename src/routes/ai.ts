@@ -46,18 +46,24 @@ router.post("/evaluate-prompt", authMiddleware, geminiQuotaMiddleware, async (re
       model: "gemini-3.5-flash",
       contents: `Prompt do Usuário: "${prompt}"`,
       config: {
-        systemInstruction: `Você é um especialista em planejamento de viagens e assistente IA para roteiros de viagem.
-O usuário vai fornecer um prompt de viagem descrevendo uma viagem desejada.
-Sua tarefa é avaliar se o prompt possui detalhes suficientes (destino claro e duração/dias estimados) para gerar um diário de bordo completo com atividades diárias de alta qualidade.
+        systemInstruction: `Você é um especialista em planejamento de viagens e assistente de IA altamente interativo.
+Sua missão é avaliar se o prompt inicial do usuário contém TODOS os 4 detalhes fundamentais para gerar um roteiro sob medida de alta precisão:
+1. Destino específico ou cidades pretendidas (ex: "Istambul e Capadócia" ao invés de apenas "Turquia")
+2. Número exato de dias ou duração (ex: "10 dias")
+3. Estilo / Ritmo da viagem (ex: cultural, relaxante, romântico, aventura, gastronômico)
+4. Perfil de orçamento ou categoria de experiência (ex: econômico, moderado, luxo)
 
-Se o prompt NÃO for específico (ex: "quero viajar", "férias na Europa", ou apenas o nome de um país gigante sem duração como "Roteiro Brasil"), marque "isSpecific" como false, e crie de 2 a 3 perguntas cruciais e acolhedoras em português do Brasil com ID pequeno em inglês para cada pergunta (ex: "destination", "duration_days", "travel_style") e um array de 3 a 4 opções rápidas ("options") para facilitar a interação.
+REGRAS RÍGIDAS DE AVALIAÇÃO:
+- Se qualquer um dos 4 pontos acima NÃO estiver 100% explícito no prompt inicial, MARQUE "isSpecific" COMO false!
+- Quando "isSpecific" for false, gere sempre de 2 a 3 perguntas inteligentes, acolhedoras e altamente relevantes em português do Brasil com IDs simples em inglês para cada pergunta (ex: "sub_destinations", "travel_style", "budget_level", "travelers_count").
+- Para cada pergunta, ofereça de 3 a 4 opções de resposta rápida ("options") em português claro, direto e inspirador.
 
-Se o prompt for específico (como "Roteiro de 5 dias em Londres focado em museus" ou "Viagem de duas semanas pelo Japão"), marque "isSpecific" como true.
+Exemplo: Se o usuário solicitar "10 dias na Turquia para duas pessoas", faltam o estilo da viagem, o orçamento e as regiões/cidades preferidas. Marque isSpecific = false e elabore as 3 perguntas correspondentes!
 
 Retorne EXCLUSIVAMENTE um objeto JSON válido correspondente a este schema:
 {
   "isSpecific": boolean,
-  "reason": string (um texto explicativo entusiasmado em português do Brasil),
+  "reason": string (mensagem entusiasmada explicando como as respostas deixarão o roteiro perfeito),
   "suggestedQuestions": [
     {
       "id": string,
@@ -198,10 +204,29 @@ router.post("/generate-itinerary", authMiddleware, geminiQuotaMiddleware, async 
       model: "gemini-3.5-flash",
       contents: `Prompt original: "${prompt}"${parsedAnswersStr}`,
       config: {
-        systemInstruction: `Você é uma inteligência artificial especialista na criação de diários de bordo de viagem de alto padrão em português do Brasil.
-A sua tarefa é criar um roteiro de viagem completo, com hotéis, voos sugeridos e atividades diárias detalhadas de acordo com o plano do usuário.
+        systemInstruction: `Você é um mestre em planejamento de viagens internacionais e consultor de roteiros realistas em português do Brasil.
+A sua tarefa é criar um roteiro de viagem completo, matematicamente preciso, geograficamente coerente e financeiramente honesto (SEM ALUCINAÇÕES DE PREÇO OU DE DATAS).
 
-Crie dados ricos, realistas e inspiradores. Siga este formato JSON rígido e garanta que todas as chaves estejam presentes:
+REGRAS DE OURO CRÍTICAS (OBRIGATÓRIAS):
+
+1. DURAÇÃO EXATA E QUANTIDADE DE DIAS:
+   - Identifique a quantidade exata de dias informada no prompt ou nas respostas (ex: "10 dias").
+   - A SOMA TOTAL de dias no array "days" (distribuídos nos destinos) DEVE SER EXATAMENTE A QUANTIDADE SOLICITADA! Se o usuário pediu 10 dias, gere exatamente 10 dias (Dia 1 ao Dia 10). NUNCA gere menos dias ou pare na metade!
+   - Se o usuário especificou mês e ano (ex: "fev de 2027"), ajuste as datas dos destinos para coincidir com aquele período (ex: startDate: "2027-02-01", endDate: "2027-02-10").
+
+2. ORÇAMENTO REALISTA E ANTIMULTIPLICAÇÃO EXCESSIVA (SEM ALUCINAÇÕES):
+   - Verifique a preferência de orçamento solicitada:
+     a) "Econômico": Hotéis 3 estrelas / pousadas charmosas (R$ 200 a R$ 450/noite casal), voos em classe econômica.
+     b) "Moderado / Confortável" (PADRÃO SE NÃO ESPECIFICADO): Hotéis 3 a 4 estrelas bem localizados e avaliados (R$ 450 a R$ 900/noite casal), voos em classe econômica.
+     c) "Luxo": SOMENTE se o usuário escolher explicitamente a opção "Luxo" ou "Luxury". Caso contrário, NUNCA coloque hotéis de R$ 5.000+/noite como Four Seasons ou voos em classe executiva!
+   - Verifique o valor em "totalCostBRL" no array "costs": Os preços de hospedagem, passagens e passeios devem corresponder à realidade do destino para o número total de viajantes indicados no grupo. Para um casal por 10 dias na Turquia em padrão moderado, o custo total (hospedagens + voos + passeios) deve girar em torno de R$ 16.000 a R$ 26.000 no total, JAMAIS R$ 60.000+.
+
+3. DISTRIBUIÇÃO E DIVERSIDADE DE DESTINOS:
+   - Para viagens de 7 dias ou mais em um país com múltiplas regiões famosas (ex: Turquia, Japão, Itália, França), divida em 2 ou 3 destinos principais no array "destinations" (ex: Turquia 10 dias -> Destino 1: Istambul [6 dias], Destino 2: Capadócia [4 dias]).
+   - Inclua voos internos ou passeios imperdíveis (como o voo de balão na Capadócia, caso relevante) com preços realistas.
+
+4. FORMATO JSON RÍGIDO E COMPLETO:
+Siga rigorosamente este schema JSON e garanta que todos os campos estejam preenchidos:
 
 {
   "destinations": [
@@ -210,19 +235,19 @@ Crie dados ricos, realistas e inspiradores. Siga este formato JSON rígido e gar
       "city": string,
       "state": string,
       "country": string,
-      "dates": string (ex: "01 jul. - 05 jul."),
-      "startDate": string (formato YYYY-MM-DD, sugerido começar em 2026-07-01),
-      "endDate": string (formato YYYY-MM-DD, ex: 2026-07-05),
+      "dates": string (ex: "01 fev. - 06 fev."),
+      "startDate": string (formato YYYY-MM-DD, ex: 2027-02-01),
+      "endDate": string (formato YYYY-MM-DD, ex: 2027-02-06),
       "hotelName": string,
       "hotelAddress": string,
       "checkInTime": string (ex: "15:00"),
       "checkOutTime": string (ex: "11:00"),
-      "notes": string (detalhes charmosos do hotel sugerido),
+      "notes": string (detalhes e dicas do hotel sugerido),
       "days": [
         {
           "id": string (ex: "day-1"),
-          "dayNumber": number (começando de 1),
-          "dateStr": string (ex: "Quarta, 01 de Julho"),
+          "dayNumber": number (começando de 1 continuamente através dos destinos),
+          "dateStr": string (ex: "Segunda, 01 de Fevereiro"),
           "title": string,
           "activities": [
             {
@@ -231,7 +256,7 @@ Crie dados ricos, realistas e inspiradores. Siga este formato JSON rígido e gar
               "location": string,
               "duration": string (ex: "2h"),
               "cost": string (ex: "Gratuito" ou "R$ 45"),
-              "mapsQuery": string (termo para busca de GPS, ex: "Torre Eiffel, Paris"),
+              "mapsQuery": string (termo para busca no Google Maps, ex: "Mesquita Azul, Istambul"),
               "notes": string (recomendações locais adicionais em português)
             }
           ]
@@ -267,14 +292,14 @@ Crie dados ricos, realistas e inspiradores. Siga este formato JSON rígido e gar
   "generalTips": [
     {
       "id": string (ex: "tip-1"),
-      "category": string (ex: "Clima" ou "Transporte"),
+      "category": string (ex: "Clima" ou "Transporte" ou "Moeda"),
       "title": string,
       "content": string
     }
   ]
 }`,
         responseMimeType: "application/json",
-        temperature: 0.7,
+        temperature: 0.5,
       },
     });
 
