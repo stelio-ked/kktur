@@ -52,6 +52,7 @@ import SettingsTab from "./components/SettingsTab";
 import ChatTab from "./components/ChatTab";
 import LoginScreen from "./components/LoginScreen";
 import AdminDashboard from "./components/AdminDashboard";
+import FirstAccessOnboarding from "./components/FirstAccessOnboarding";
 
 const getCleanSlatePayload = () => {
   const destId = `dest-${Math.random().toString(36).substring(7)}`;
@@ -2639,47 +2640,13 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                <div className="space-y-5">
-                  <div className="space-y-2">
-                    <span className="inline-block px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-black uppercase tracking-wider">Primeiro Acesso</span>
-                    <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Sua jornada começa aqui!</h2>
-                    <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-md mx-auto">
-                      Você acabou de entrar na sua conta. Vamos criar o seu primeiro roteiro para começar a planejar destinos, orçamentos, voos e atividades.
-                    </p>
-                  </div>
-                  
-                  <div className="bg-slate-50 p-4 border border-slate-100 rounded-2xl max-w-md mx-auto space-y-3">
-                    <label className="block text-left text-[10px] font-extrabold text-slate-500 uppercase tracking-widest text-center">NOMEIE SUA PRIMEIRA VIAGEM</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="Ex: Eurotrip 2026, Férias Gramado..."
-                        id="first-itinerary-input"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            const val = (e.target as HTMLInputElement).value.trim();
-                            if (val) {
-                              handleCreateItinerary(val);
-                            }
-                          }
-                        }}
-                        className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 grow font-bold text-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 placeholder-slate-400"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const el = document.getElementById("first-itinerary-input") as HTMLInputElement;
-                          if (el && el.value.trim()) {
-                            handleCreateItinerary(el.value.trim());
-                          }
-                        }}
-                        className="cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition-all shadow-sm"
-                      >
-                        Começar
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <FirstAccessOnboarding
+                  token={token}
+                  isOffline={isOffline}
+                  currentUser={currentUser}
+                  onImportGeneratedItinerary={handleImportGeneratedItinerary}
+                  onCreateManualItinerary={handleCreateItinerary}
+                />
               )}
             </motion.div>
           ) : (
