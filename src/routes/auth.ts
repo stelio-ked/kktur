@@ -8,6 +8,8 @@ import { users } from "../db/schema.js";
 import { authMiddleware, AuthRequest, JWT_SECRET, formatDbError } from "../middleware/auth.js";
 import { sendEmail, buildPasswordSetupEmail, buildAccountVerificationEmail } from "../services/email.js";
 
+//Ajustes dia 07/08/2026
+
 const router = Router();
 
 interface SimulatedEmail {
@@ -33,7 +35,7 @@ router.post("/register", async (req, res) => {
   try {
     const { email, password, name } = req.body;
     if (!email || !password || !name) return res.status(400).json({ error: "Preencha todos os campos" });
-    
+
     const existingUser = await db.select().from(users).where(eq(users.email, email)).limit(1);
     if (existingUser.length > 0) return res.status(400).json({ error: "E-mail já cadastrado" });
 
@@ -52,7 +54,7 @@ router.post("/register", async (req, res) => {
       passwordResetToken: verificationToken,
       passwordResetExpires: expires,
     }).returning();
-    
+
     const appUrl = getAppUrl(req);
     const verifyUrl = `${appUrl}?action=verify_email&token=${verificationToken}&email=${encodeURIComponent(email)}`;
 
@@ -175,15 +177,15 @@ router.post("/change-my-password", authMiddleware, async (req: AuthRequest, res)
     if (userId === 0 && email) {
       const [foundUser] = await db.select().from(users).where(eq(users.email, email)).limit(1);
       if (foundUser) {
-         user = foundUser;
+        user = foundUser;
       } else {
-         user = { id: 0, email, passwordHash: null };
+        user = { id: 0, email, passwordHash: null };
       }
     } else {
       const [foundUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
       user = foundUser;
     }
-    
+
     if (!user) {
       return res.status(404).json({ error: "Usuário não encontrado." });
     }
@@ -202,9 +204,9 @@ router.post("/change-my-password", authMiddleware, async (req: AuthRequest, res)
     const hash = await bcrypt.hash(newPassword, saltRounds);
 
     if (user.id === 0) {
-       await db.insert(users).values({ email: user.email, name: "Viajante", passwordHash: hash });
+      await db.insert(users).values({ email: user.email, name: "Viajante", passwordHash: hash });
     } else {
-       await db.update(users).set({ passwordHash: hash }).where(eq(users.id, user.id));
+      await db.update(users).set({ passwordHash: hash }).where(eq(users.id, user.id));
     }
 
     res.json({ success: true, message: "Senha alterada com sucesso." });
@@ -220,7 +222,7 @@ router.post("/gmail-signup", async (req, res) => {
     if (!email || !name) {
       return res.status(400).json({ error: "E-mail e Nome são obrigatórios." });
     }
-    
+
     const isGmailOfGoogle = email.toLowerCase().endsWith("@gmail.com");
     if (!isGmailOfGoogle) {
       return res.status(400).json({ error: "Por favor, utilize uma conta de e-mail do Google (@gmail.com) válida." });
@@ -495,7 +497,7 @@ router.post("/gmail-google-login", async (req, res) => {
       }
 
 
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: "Esta conta foi cadastrada, mas sua senha de segurança ainda não está ativa. Como você tentou logar, acabamos de gerar e enviar um link para configurar sua senha na sua Caixa de Entrada Simulada abaixo! Por favor, verifique-a e crie sua senha.",
         requiresPasswordSetup: true
       });
