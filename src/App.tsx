@@ -53,6 +53,7 @@ import ChatTab from "./components/ChatTab";
 import LoginScreen from "./components/LoginScreen";
 import AdminDashboard from "./components/AdminDashboard";
 import FirstAccessOnboarding from "./components/FirstAccessOnboarding";
+import PWAInstallBanner from "./components/PWAInstallBanner";
 
 const getCleanSlatePayload = () => {
   const destId = `dest-${Math.random().toString(36).substring(7)}`;
@@ -2419,7 +2420,12 @@ export default function App() {
   }, [generalTips]);
 
   if (!token) {
-    return <LoginScreen onLogin={handleLogin} onTravelerLogin={handleTravelerLogin} />;
+    return (
+      <>
+        <PWAInstallBanner />
+        <LoginScreen onLogin={handleLogin} onTravelerLogin={handleTravelerLogin} />
+      </>
+    );
   }
 
   const userEmailNormalized = currentUser?.email?.toLowerCase().trim() || "";
@@ -2438,6 +2444,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans antialiased text-slate-900">
+      <PWAInstallBanner />
       
       {/* HEADER HUD BAR */}
       <Header 
