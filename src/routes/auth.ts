@@ -20,6 +20,15 @@ interface SimulatedEmail {
 }
 export const simulatedEmails: SimulatedEmail[] = [];
 
+function getAppUrl(req: any): string {
+  if (process.env.APP_URL && process.env.APP_URL.trim()) {
+    return process.env.APP_URL.trim().replace(/\/$/, "");
+  }
+  const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
+  const host = req.headers["x-forwarded-host"] || req.get("host") || "localhost:3000";
+  return `${proto}://${host}`;
+}
+
 router.post("/register", async (req, res) => {
   try {
     const { email, password, name } = req.body;
@@ -44,7 +53,7 @@ router.post("/register", async (req, res) => {
       passwordResetExpires: expires,
     }).returning();
     
-    const appUrl = process.env.APP_URL || "http://localhost:3000";
+    const appUrl = getAppUrl(req);
     const verifyUrl = `${appUrl}?action=verify_email&token=${verificationToken}&email=${encodeURIComponent(email)}`;
 
     const emailPayload = buildAccountVerificationEmail({ name, email, verifyUrl });
@@ -244,7 +253,7 @@ router.post("/gmail-signup", async (req, res) => {
     }).where(eq(users.id, targetUserId));
 
     // Montar URL com domínio correto
-    const appUrl = process.env.APP_URL || "http://localhost:3000";
+    const appUrl = getAppUrl(req);
     const resetUrl = `${appUrl}?action=setup_password&token=${token}&email=${encodeURIComponent(email)}`;
 
     // Tentar enviar e-mail real via Gmail; em dev, fallback para simulatedEmails
@@ -455,7 +464,7 @@ router.post("/gmail-google-login", async (req, res) => {
         passwordResetExpires: expires
       }).where(eq(users.id, user.id));
 
-      const appUrl = process.env.APP_URL || "http://localhost:3000";
+      const appUrl = getAppUrl(req);
       const resetUrl = `${appUrl}?action=setup_password&token=${token}&email=${encodeURIComponent(user.email)}`;
 
       // Limpar e-mails anteriores do mesmo usuário do buffer em memória
