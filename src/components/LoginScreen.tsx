@@ -192,6 +192,7 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
 
       if (isRegister && data.requiresVerification) {
         setSuccessMsg(data.message || "E-mail de confirmação enviado! Acesse sua caixa de entrada (ou caixa simulada abaixo) para ativar a conta.");
+        setPassword("");
         fetchSimulatedEmails(email);
         return;
       }
@@ -710,7 +711,14 @@ export default function LoginScreen({ onLogin, onTravelerLogin }: LoginScreenPro
                       {isRegister ? "Já possui conta?" : "Não tem conta de organizador?"}{" "}
                       <button
                         type="button"
-                        onClick={() => { setIsRegister(!isRegister); setError(""); setSuccessMsg(""); }}
+                        onClick={() => { 
+                          setIsRegister(!isRegister); 
+                          setError(""); 
+                          setSuccessMsg(""); 
+                          setEmail("");
+                          setName("");
+                          setPassword("");
+                        }}
                         className="text-indigo-600 font-black hover:underline cursor-pointer"
                       >
                         {isRegister ? "Fazer Login" : "Criar uma Conta"}
